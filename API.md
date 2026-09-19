@@ -27,9 +27,23 @@ The venv already exists if you cloned after Stage 0 — just run the last line.
 | Interactive docs | `http://localhost:8000/docs` |
 | Raw OpenAPI spec | `http://localhost:8000/openapi.json` |
 
-**CORS is already configured for `http://localhost:5173`** (Vite's default).
-If you run the frontend on a different port, say so and I'll add it — requests
-will fail with a CORS error otherwise.
+**CORS allows any `localhost` / `127.0.0.1` port**, so your dev server's port
+doesn't matter. If you serve the frontend from a LAN IP or a tunnel domain,
+tell me and I'll whitelist that origin — it'll fail with a CORS error otherwise.
+
+### No backend? Use the snapshot
+
+`mock_dashboard.json` in the repo root is a byte-for-byte capture of what
+`GET /api/dashboard` currently returns. Import it directly and build the whole
+UI with no Python installed:
+
+```ts
+import mock from "../mock_dashboard.json";
+const data: DashboardResponse = mock;
+```
+
+Swap it for a real `fetch` at integration time. It's a snapshot of the mock, so
+it goes stale if the contract changes — I'll regenerate it when that happens.
 
 ### Generating a typed client
 

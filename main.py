@@ -16,9 +16,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Finance Dashboard API", version="0.1.0")
 
+# Any localhost port, so the frontend's dev server port doesn't matter.
+# Add an explicit origin here if the frontend runs on a LAN IP or a tunnel.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
