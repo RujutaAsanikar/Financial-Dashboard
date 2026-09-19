@@ -1,1 +1,55 @@
-merchant,category
+merchant,category,source
+Adobe *Creative Cloud,Subscriptions,triqai
+Amazon,Shopping,triqai
+Amzn Mktp Amzn.Com/Bill,Shopping,triqai
+Annual Membership Fee,Fees & Interest,keyword
+Atm Withdrawal - First Bank,Fees & Interest,triqai
+Atm Withdrawal - Interac,Transfer,triqai
+Automatic Payment - Thank You,Transfer,keyword
+Coffee Tree Roaster Pittsburgh,Food & Drink,triqai
+Coffee Tree Roasters,Food & Drink,triqai
+Duolingo,Education,triqai
+Fees - Interac,Fees & Interest,keyword
+Fees - Monthly,Fees & Interest,keyword
+Fees - Overdraft,Fees & Interest,triqai
+First Bank,Fees & Interest,triqai
+Giant Eagle,Groceries,triqai
+Giant Eagle Cranberry,Groceries,triqai
+Home Depot,Shopping,triqai
+Home Depot Pittsburgh,Shopping,triqai
+Interac Purchase - Bookstore,Shopping,keyword
+Interac Purchase - Coffee,Food & Drink,triqai
+Interac Purchase - Gas Bar,Transportation,triqai
+Interac Purchase - Hardware,Shopping,triqai
+Interac Purchase - Pharmacy,Health,keyword
+Interac Purchase - Restaurant,Food & Drink,keyword
+Interac Purchase - Supermarket,Groceries,triqai
+Interac Refund - Hardware,Shopping,triqai
+Interest Charge On Purchases,Fees & Interest,triqai
+Lyft,Transportation,triqai
+Lyft *Ride,Transportation,triqai
+Netflix,Subscriptions,triqai
+Netflix.Com,Subscriptions,triqai
+Noodlehead,Food & Drink,triqai
+Noodlehead - Pittsburgh,Food & Drink,triqai
+Payroll Deposit - Employer,Income,keyword
+Pre-Auth. Payment - Gym,Health,triqai
+Pre-Auth. Payment - Mortgage,Housing,keyword
+Shell,Transportation,triqai
+Shell Oil Pittsburgh,Transportation,triqai
+Spotify,Subscriptions,triqai
+Spotifyusa,Subscriptions,triqai
+Steam Games,Entertainment,triqai
+Target,Shopping,triqai
+Target Pittsburgh,Shopping,triqai
+Trader Joe's,Groceries,triqai
+Trader Joes Pittsburgh,Groceries,triqai
+Trip Help.Uber.Com,Transportation,triqai
+Uber,Transportation,triqai
+Uber Eats,Food & Drink,triqai
+Web Bill Payment - Hydro,Utilities,triqai
+Web Bill Payment - Internet,Utilities,keyword
+Web Bill Payment - Mobile,Utilities,keyword
+Web Bill Payment - Visa,Transfer,keyword
+Web Funds Transfer - To Savings,Transfer,triqai
+Wholefds Pgh Pittsburgh,Groceries,triqai
