@@ -88,6 +88,17 @@ _CREDIT_UNION = re.compile(r"\bcredit union\b")
 
 DEFAULT_CURRENCY = "USD"
 
+# The account dict splits in two. Stage 3 should build its INSERT from
+# PERSISTED_ACCOUNT_FIELDS rather than from account.keys(), so that adding a
+# validation-only field here can never silently become a database column.
+PERSISTED_ACCOUNT_FIELDS = (
+    "id", "bank_name", "account_holder_name", "account_last4", "account_type",
+    "currency", "opening_balance", "closing_balance", "apr", "credit_limit",
+)
+
+# Statement header figures, kept only so Stage 2's check B has inputs.
+VALIDATION_ONLY_ACCOUNT_FIELDS = ("total_deposits", "total_withdrawals")
+
 
 def normalize_account_type(raw: str | None) -> str:
     """Free text from the statement -> checking|savings|credit|unknown.
@@ -165,6 +176,34 @@ def adapt(parser_json: dict, apr: float | None = None,
 
     apr and credit_limit come from the upload form, not the statement.
     Raises ValueError if the payload has no "transactions" key.
+
+    The account dict, and where each key ends up:
+
+        id                   persisted   slug, f"{bank}-{last4}" lowercased
+        bank_name            persisted
+        account_holder_name  persisted
+        account_last4        persisted   last 4 digits only, never the rest
+        account_type         persisted   checking|savings|credit|unknown
+        currency             persisted   defaults to USD
+        opening_balance      persisted
+        closing_balance      persisted
+        apr                  persisted   from the upload form, not the JSON
+        credit_limit         persisted   from the upload form, not the JSON
+        total_deposits       VALIDATION-ONLY
+        total_withdrawals    VALIDATION-ONLY
+
+    The last two are statement header figures that exist only to give Stage 2's
+    check B its inputs. They are not persisted, not in the DuckDB schema, and
+    not in models.py, so they never reach the API. They ride on this dict
+    because both signatures either side of them are fixed -- adapt() returns
+    (account, transactions) and reconcile() takes (account, txns) -- leaving
+    the account dict as the only channel between the two.
+
+    So: anything writing this dict to the database must name its columns.
+    A splat of account.keys() into an INSERT will break on those two.
+
+    Transaction rows are the canonical model from CLAUDE.md section 3, minus
+    "id", which is Stage 3's to mint once the row is about to be stored.
     """
     if not isinstance(parser_json, dict) or "transactions" not in parser_json:
         raise ValueError(

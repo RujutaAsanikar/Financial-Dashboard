@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from adapter import adapt, build_account_id, last4, normalize_account_type
+from adapter import (
+    PERSISTED_ACCOUNT_FIELDS,
+    VALIDATION_ONLY_ACCOUNT_FIELDS,
+    adapt,
+    build_account_id,
+    last4,
+    normalize_account_type,
+)
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
@@ -247,6 +254,50 @@ def test_empty_row_with_no_amount_is_skipped():
     ]}
     _, txns = adapt(payload)
     assert [t["description"] for t in txns] == ["kept"]
+
+
+# --- the account dict's shape ----------------------------------------------
+
+def test_account_keys_are_exactly_the_declared_two_groups():
+    """Pins the shape so it cannot drift away from the docs again.
+
+    total_deposits/total_withdrawals were added for Stage 2 check B and went
+    undocumented in both CLAUDE.md section 3 and this repo. If you are here
+    because this test failed, you added a key: decide which group it belongs
+    to, then update CLAUDE.md section 3 and the adapt() docstring to match.
+    """
+    acct, _ = adapt(load("checking"))
+    assert set(acct) == set(PERSISTED_ACCOUNT_FIELDS) | set(VALIDATION_ONLY_ACCOUNT_FIELDS)
+    assert not set(PERSISTED_ACCOUNT_FIELDS) & set(VALIDATION_ONLY_ACCOUNT_FIELDS)
+
+
+def test_header_totals_are_carried_for_reconciliation():
+    raw = load("checking")
+    acct, _ = adapt(raw)
+    assert acct["total_deposits"] == raw["total_deposits"]
+    assert acct["total_withdrawals"] == raw["total_withdrawals"]
+
+
+def test_header_totals_default_to_none_when_not_printed():
+    acct, _ = adapt({"account_number": "1234", "transactions": []})
+    assert acct["total_deposits"] is None
+    assert acct["total_withdrawals"] is None
+
+
+def test_validation_only_fields_are_not_in_the_api_model():
+    """They must never reach the frontend."""
+    from models import Account
+
+    for field in VALIDATION_ONLY_ACCOUNT_FIELDS:
+        assert field not in Account.model_fields
+
+
+def test_persisted_fields_cover_the_api_model():
+    """Every field the API exposes must be something we actually keep."""
+    from models import Account
+
+    api_only = {"transaction_count"}  # derived at Stage 9, not stored per-account
+    assert set(Account.model_fields) - api_only <= set(PERSISTED_ACCOUNT_FIELDS)
 
 
 # --- passthrough fields ----------------------------------------------------
