@@ -4,3 +4,4 @@ __pycache__/
 finance.duckdb
 .pytest_cache/
 .env
+triqai_probe_results.json
