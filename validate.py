@@ -29,6 +29,8 @@ space, so they take the same factor rather than the opposite one.
 import logging
 import math
 
+from adapter import TOTALS_DERIVED
+
 logger = logging.getLogger(__name__)
 
 # Statements round to the cent, so anything inside a cent is agreement. The
@@ -119,9 +121,17 @@ def reconcile(account: dict, txns: list[dict]) -> dict:
     # Independent of our row extraction entirely -- it compares two header
     # figures against each other, so A passing and B failing means the bank's
     # summary disagrees with its own balance, not that we misread anything.
+    #
+    # Only runs on totals the bank actually printed. When the adapter had to
+    # derive them from our own rows, deposits - withdrawals is identically
+    # sum(amounts) and this check collapses into check A: it would agree
+    # every time and add no evidence, while making checks_run read 3. A check
+    # that cannot fail is not a check.
     deposits = _num(account.get("total_deposits"))
     withdrawals = _num(account.get("total_withdrawals"))
-    if expected_delta is None or deposits is None or withdrawals is None:
+    printed = account.get("totals_source") != TOTALS_DERIVED
+
+    if expected_delta is None or deposits is None or withdrawals is None or not printed:
         checks["totals_vs_balance"] = None
     else:
         checks["totals_vs_balance"] = _agrees((deposits - withdrawals) * sign, expected_delta)

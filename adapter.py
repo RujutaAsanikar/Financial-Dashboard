@@ -97,7 +97,25 @@ PERSISTED_ACCOUNT_FIELDS = (
 )
 
 # Statement header figures, kept only so Stage 2's check B has inputs.
-VALIDATION_ONLY_ACCOUNT_FIELDS = ("total_deposits", "total_withdrawals")
+VALIDATION_ONLY_ACCOUNT_FIELDS = ("total_deposits", "total_withdrawals", "totals_source")
+
+# Provenance of total_deposits / total_withdrawals. This distinction is not
+# bookkeeping -- it is what keeps check B honest.
+#
+# TOTALS_STATEMENT: the bank printed them. Check B then compares two figures
+#   the bank asserted independently of each other, and independently of our
+#   extraction. That is the whole point of the check.
+#
+# TOTALS_DERIVED: the bank did not print them, so we summed our own rows.
+#   deposits - withdrawals is then identically sum(amounts), which is exactly
+#   what check A already compares against closing - opening. Running check B
+#   on these would restate check A, always agree with it, and report three
+#   passing checks where only one piece of evidence exists. Stage 2 therefore
+#   skips B when it sees this value. The numbers are still worth having --
+#   they are real period totals, fine to display -- they just cannot audit
+#   themselves.
+TOTALS_STATEMENT = "statement"
+TOTALS_DERIVED = "derived"
 
 
 def normalize_account_type(raw: str | None) -> str:
@@ -189,18 +207,24 @@ def adapt(parser_json: dict, apr: float | None = None,
         closing_balance      persisted
         apr                  persisted   from the upload form, not the JSON
         credit_limit         persisted   from the upload form, not the JSON
-        total_deposits       VALIDATION-ONLY
-        total_withdrawals    VALIDATION-ONLY
+        total_deposits       VALIDATION-ONLY  printed, else derived from rows
+        total_withdrawals    VALIDATION-ONLY  printed, else derived from rows
+        totals_source        VALIDATION-ONLY  which of those two it was
 
-    The last two are statement header figures that exist only to give Stage 2's
+    The last three are statement header figures that exist to give Stage 2's
     check B its inputs. They are not persisted, not in the DuckDB schema, and
     not in models.py, so they never reach the API. They ride on this dict
     because both signatures either side of them are fixed -- adapt() returns
     (account, transactions) and reconcile() takes (account, txns) -- leaving
     the account dict as the only channel between the two.
 
+    When the statement did not print the totals we sum our own rows and set
+    totals_source to TOTALS_DERIVED. The figures are then real and fine to
+    display, but Stage 2 will skip check B on them, because derived totals
+    reduce that check to a restatement of check A. See the constants above.
+
     So: anything writing this dict to the database must name its columns.
-    A splat of account.keys() into an INSERT will break on those two.
+    A splat of account.keys() into an INSERT will break on those three.
 
     Transaction rows are the canonical model from CLAUDE.md section 3, minus
     "id", which is Stage 3's to mint once the row is about to be stored.
@@ -229,15 +253,24 @@ def adapt(parser_json: dict, apr: float | None = None,
         "currency": parser_json.get("currency") or DEFAULT_CURRENCY,
         "opening_balance": _to_float(parser_json.get("opening_balance")),
         "closing_balance": _to_float(parser_json.get("closing_balance")),
-        # Statement header totals. Carried only so Stage 2 can run check B
-        # against them; they are not persisted and not part of the API.
+        # Statement header totals, filled in after the loop below so that they
+        # can fall back to being derived from the rows. Not persisted, not
+        # part of the API.
         "total_deposits": _to_float(parser_json.get("total_deposits")),
         "total_withdrawals": _to_float(parser_json.get("total_withdrawals")),
+        "totals_source": None,
         "apr": apr,
         "credit_limit": credit_limit,
     }
 
     transactions: list[dict] = []
+    # Gross column sums, for deriving the header totals if they weren't
+    # printed. Gross rather than net because that is what a statement prints:
+    # a row with both columns filled contributes to both sums, where its
+    # signed `amount` would only carry the net.
+    gross_deposits = 0.0
+    gross_withdrawals = 0.0
+
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             logger.warning("Skipping row %d: expected an object, got %s",
@@ -261,6 +294,9 @@ def adapt(parser_json: dict, apr: float | None = None,
             logger.warning("Skipping row %d: no amount and no description", index)
             continue
 
+        gross_deposits += deposit
+        gross_withdrawals += withdrawal
+
         transactions.append({
             "account_id": account_id,
             "date": txn_date,
@@ -275,6 +311,20 @@ def adapt(parser_json: dict, apr: float | None = None,
             "is_transfer": False,
             "is_recurring": False,
         })
+
+    # Header totals: keep what the statement printed, otherwise derive from
+    # the rows we kept. `totals_source` records which, because the difference
+    # decides whether Stage 2's check B may use them at all -- derived totals
+    # make that check circular. See TOTALS_DERIVED in this module's docstring.
+    if account["total_deposits"] is None or account["total_withdrawals"] is None:
+        account["total_deposits"] = round(gross_deposits, 2)
+        account["total_withdrawals"] = round(gross_withdrawals, 2)
+        account["totals_source"] = TOTALS_DERIVED
+        logger.info("Derived header totals for %s: deposits %.2f, withdrawals %.2f "
+                    "(not printed on the statement; check B will be skipped)",
+                    account_id, account["total_deposits"], account["total_withdrawals"])
+    else:
+        account["totals_source"] = TOTALS_STATEMENT
 
     logger.info("Adapted %d/%d rows for account %s", len(transactions), len(rows), account_id)
     return account, transactions

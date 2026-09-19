@@ -8,6 +8,8 @@ import pytest
 
 from adapter import (
     PERSISTED_ACCOUNT_FIELDS,
+    TOTALS_DERIVED,
+    TOTALS_STATEMENT,
     VALIDATION_ONLY_ACCOUNT_FIELDS,
     adapt,
     build_account_id,
@@ -271,17 +273,75 @@ def test_account_keys_are_exactly_the_declared_two_groups():
     assert not set(PERSISTED_ACCOUNT_FIELDS) & set(VALIDATION_ONLY_ACCOUNT_FIELDS)
 
 
-def test_header_totals_are_carried_for_reconciliation():
+def test_printed_header_totals_are_carried_verbatim():
     raw = load("checking")
     acct, _ = adapt(raw)
     assert acct["total_deposits"] == raw["total_deposits"]
     assert acct["total_withdrawals"] == raw["total_withdrawals"]
+    assert acct["totals_source"] == TOTALS_STATEMENT
 
 
-def test_header_totals_default_to_none_when_not_printed():
+def test_header_totals_are_derived_when_not_printed():
+    raw = load("checking")
+    printed_deposits = raw["total_deposits"]
+    printed_withdrawals = raw["total_withdrawals"]
+    raw = {**raw, "total_deposits": None, "total_withdrawals": None}
+
+    acct, _ = adapt(raw)
+
+    assert acct["totals_source"] == TOTALS_DERIVED
+    # The fixture is clean, so what we derive matches what it printed.
+    assert acct["total_deposits"] == pytest.approx(printed_deposits, abs=0.01)
+    assert acct["total_withdrawals"] == pytest.approx(printed_withdrawals, abs=0.01)
+
+
+def test_one_missing_total_derives_both():
+    """A half-printed pair would make check B partly circular, which is
+    harder to reason about than either extreme. Derive the whole pair."""
+    raw = {**load("checking"), "total_withdrawals": None}
+    acct, _ = adapt(raw)
+    assert acct["totals_source"] == TOTALS_DERIVED
+    assert acct["total_deposits"] is not None
+
+
+def test_derived_totals_are_gross_not_net():
+    """A statement prints column sums. A row with both columns filled lands in
+    both of them, where its signed `amount` would only carry the net."""
+    acct, txns = adapt({"account_number": "1234", "transactions": [
+        {"date": "2026-08-01", "description": "split row",
+         "withdrawal": 100.00, "deposit": 30.00},
+    ]})
+
+    assert txns[0]["amount"] == -70.00
+    assert acct["total_deposits"] == 30.00
+    assert acct["total_withdrawals"] == 100.00
+
+
+def test_derived_totals_exclude_skipped_rows():
+    acct, txns = adapt({"account_number": "1234", "transactions": [
+        {"date": "2026-08-01", "description": "kept", "deposit": 50.00},
+        {"date": "not a date", "description": "dropped", "deposit": 999.00},
+    ]})
+
+    assert len(txns) == 1
+    assert acct["total_deposits"] == 50.00
+
+
+def test_derived_totals_on_an_empty_statement_are_zero():
     acct, _ = adapt({"account_number": "1234", "transactions": []})
-    assert acct["total_deposits"] is None
-    assert acct["total_withdrawals"] is None
+    assert acct["total_deposits"] == 0.0
+    assert acct["total_withdrawals"] == 0.0
+    assert acct["totals_source"] == TOTALS_DERIVED
+
+
+def test_derived_difference_is_always_the_sum_of_amounts():
+    """The identity that makes a derived check B circular. Pinned here so the
+    reason validate.py skips it stays visible."""
+    raw = {**load("credit"), "total_deposits": None, "total_withdrawals": None}
+    acct, txns = adapt(raw)
+
+    assert acct["total_deposits"] - acct["total_withdrawals"] == pytest.approx(
+        sum(t["amount"] for t in txns), abs=0.01)
 
 
 def test_validation_only_fields_are_not_in_the_api_model():

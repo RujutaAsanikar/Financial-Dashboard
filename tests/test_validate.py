@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from adapter import adapt
+from adapter import TOTALS_DERIVED, TOTALS_STATEMENT, adapt
 from validate import balance_sign, reconcile
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
@@ -271,6 +271,91 @@ def test_missing_header_totals_skip_b_only(checking):
     assert result["checks"]["totals_vs_balance"] is None
     assert result["reconciled"] is True
     assert result["checks_run"] == 2
+
+
+# --- derived totals must not be allowed to audit themselves ---------------
+
+def test_derived_totals_do_not_run_check_b():
+    """The whole reason totals_source exists.
+
+    The adapter fills unprinted totals from our own rows, so
+    deposits - withdrawals is identically sum(amounts) -- which is what check
+    A already compares against closing - opening. Letting B run on those would
+    restate A, agree with it unconditionally, and advertise three passing
+    checks on one piece of evidence.
+    """
+    raw = json.loads((FIXTURES / "checking.json").read_text())
+    acct, txns = adapt({**raw, "total_deposits": None, "total_withdrawals": None})
+
+    assert acct["totals_source"] == TOTALS_DERIVED
+    assert acct["total_deposits"] is not None, "the numbers are still filled in"
+
+    result = reconcile(acct, txns)
+
+    assert result["checks"]["totals_vs_balance"] is None
+    assert result["checks_run"] == 2, "derived totals add no evidence"
+    assert result["reconciled"] is True
+
+
+def test_a_derived_check_b_is_just_check_a_wearing_a_hat():
+    """Proves the circularity rather than asserting it.
+
+    Corrupt one row's withdrawal. Then compare what check B reports in each
+    provenance, against what check A reports on the same data:
+
+      printed  A fails, B PASSES. B compares two header figures and never
+               looked at our rows, so it is untouched -- and that gap between
+               A and B is information: the header is self-consistent, so the
+               fault is in our extraction.
+
+      derived  A fails, B fails identically, because B was computed from the
+               very rows A is rejecting. It has no opinion of its own.
+
+    Two checks that cannot disagree are one check.
+    """
+    raw = json.loads((FIXTURES / "checking.json").read_text())
+    tampered = copy.deepcopy(raw)
+    tampered["transactions"][4]["withdrawal"] = 9999.99
+
+    printed = reconcile(*adapt(tampered))
+    assert printed["checks"]["sum_vs_balance"] is False
+    assert printed["checks"]["totals_vs_balance"] is True, "header still agrees with itself"
+
+    # Smuggle derived totals past the provenance gate -- exactly what
+    # validate.py refuses to do -- and watch B collapse onto A.
+    derived_acct, derived_txns = adapt(
+        {**tampered, "total_deposits": None, "total_withdrawals": None})
+    smuggled = reconcile({**derived_acct, "totals_source": TOTALS_STATEMENT}, derived_txns)
+
+    assert smuggled["checks"]["totals_vs_balance"] == smuggled["checks"]["sum_vs_balance"]
+    assert smuggled["checks"]["totals_vs_balance"] is False
+
+
+@pytest.mark.parametrize("tamper", [
+    {"transactions": 4, "withdrawal": 9999.99},
+    {"transactions": 0, "withdrawal": 0.01},
+    {"transactions": 11, "deposit": 500.00},
+])
+def test_derived_b_tracks_a_exactly_whatever_we_break(tamper):
+    """The identity holds for any corruption, which is what makes it useless."""
+    raw = copy.deepcopy(json.loads((FIXTURES / "checking.json").read_text()))
+    index = tamper.pop("transactions")
+    raw["transactions"][index].update(tamper)
+    raw["total_deposits"] = raw["total_withdrawals"] = None
+
+    acct, txns = adapt(raw)
+    result = reconcile({**acct, "totals_source": TOTALS_STATEMENT}, txns)
+
+    assert result["checks"]["totals_vs_balance"] == result["checks"]["sum_vs_balance"]
+
+
+def test_absent_provenance_is_treated_as_printed(checking):
+    """Back-compat: a hand-built account dict with no totals_source key, as in
+    the tests above and anything predating this field, still runs check B."""
+    acct, txns = checking
+    acct = {k: v for k, v in acct.items() if k != "totals_source"}
+
+    assert reconcile(acct, txns)["checks"]["totals_vs_balance"] is True
 
 
 # --- no evidence is not the same as verified ------------------------------
