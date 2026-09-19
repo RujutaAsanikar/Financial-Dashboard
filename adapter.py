@@ -190,6 +190,10 @@ def adapt(parser_json: dict, apr: float | None = None,
         "currency": parser_json.get("currency") or DEFAULT_CURRENCY,
         "opening_balance": _to_float(parser_json.get("opening_balance")),
         "closing_balance": _to_float(parser_json.get("closing_balance")),
+        # Statement header totals. Carried only so Stage 2 can run check B
+        # against them; they are not persisted and not part of the API.
+        "total_deposits": _to_float(parser_json.get("total_deposits")),
+        "total_withdrawals": _to_float(parser_json.get("total_withdrawals")),
         "apr": apr,
         "credit_limit": credit_limit,
     }
