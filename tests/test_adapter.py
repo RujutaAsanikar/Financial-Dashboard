@@ -99,6 +99,73 @@ def test_account_type_normalization(raw, expected):
     assert normalize_account_type(raw) == expected
 
 
+@pytest.mark.parametrize("raw,expected", [
+    # Card brands as actually printed, i.e. never on their own
+    ("Visa Signature", "credit"),
+    ("Visa Infinite Privilege", "credit"),
+    ("World Mastercard", "credit"),
+    ("American Express Platinum", "credit"),
+    ("Discover it Card", "credit"),
+    ("Credit Card Account", "credit"),
+    ("Line of Credit", "credit"),
+    ("Personal Line Of Credit", "credit"),
+    ("HELOC", "credit"),
+    ("Charge Card", "credit"),
+    # Deposit accounts as actually printed
+    ("Chequing Account - CAD", "checking"),
+    ("Everyday Chequing", "checking"),
+    ("Student Chequing Account", "checking"),
+    ("Free Interest Checking", "checking"),
+    ("Current Account", "checking"),
+    ("Demand Deposit Account", "checking"),
+    ("High Yield Savings", "savings"),
+    ("Money Market Account", "savings"),
+    ("TFSA", "savings"),
+    ("Certificate of Deposit", "savings"),
+    # Whitespace and case are already handled, but prove it on real strings
+    ("  visa   SIGNATURE  ", "credit"),
+])
+def test_account_type_keyword_matching(raw, expected):
+    """Statements print qualified names, so exact matching is not enough."""
+    assert normalize_account_type(raw) == expected
+
+
+@pytest.mark.parametrize("raw,expected", [
+    # TRAP 1: the card network does not make it a credit account.
+    ("Visa Debit", "checking"),
+    ("Visa Debit Card", "checking"),
+    ("Debit Mastercard", "checking"),
+    # TRAP 2: "credit" here names the institution, not the product.
+    ("Credit Union Checking", "checking"),
+    ("Acme Credit Union Chequing Account", "checking"),
+    ("Credit Union Savings", "savings"),
+    # ...but a credit union's actual card is still a card.
+    ("Acme Credit Union Visa", "credit"),
+    ("Credit Union Credit Card", "credit"),
+])
+def test_account_type_traps(raw, expected):
+    """The two misreadings that would silently invert reconciliation."""
+    assert normalize_account_type(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [
+    "Statement of Account",
+    "Prepaid Card",
+    "Konto",
+    "Account Summary",
+    "12345",
+])
+def test_unrecognised_types_fall_through_to_unknown(raw):
+    """Biased against claiming credit: an unknown defaults to asset semantics,
+    which degrades visibly rather than silently inverting reconciliation."""
+    assert normalize_account_type(raw) == "unknown"
+
+
+def test_account_type_is_always_one_of_four():
+    for raw in ("Visa", "Chequing", "Savings", "Gibberish", None, "", "  "):
+        assert normalize_account_type(raw) in {"checking", "savings", "credit", "unknown"}
+
+
 # --- account_id ------------------------------------------------------------
 
 def test_account_id_is_a_slug():

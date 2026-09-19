@@ -63,29 +63,49 @@ logger = logging.getLogger(__name__)
 # Tried in order. The parser emits ISO; the rest are defensive.
 _DATE_FORMATS = ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y", "%Y/%m/%d", "%b %d, %Y", "%d %b %Y")
 
-_ACCOUNT_TYPES = {
-    "chequing": "checking",
-    "chequing account": "checking",
-    "checking": "checking",
-    "checking account": "checking",
-    "savings": "savings",
-    "saving": "savings",
-    "savings account": "savings",
-    "credit card": "credit",
-    "credit": "credit",
-    "visa": "credit",
-    "mastercard": "credit",
-    "amex": "credit",
-}
+# Keyword rules, not exact matches: statements print "Visa Signature" and
+# "Everyday Chequing", never the bare word. Evaluated in order, first match
+# wins, so the ordering is load-bearing -- see the two traps below.
+_TYPE_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    # TRAP 1: "debit" must beat every card brand. A "Visa Debit" is a
+    # chequing account that happens to run on the Visa network.
+    ("checking", ("debit",)),
+    ("credit", ("credit card", "creditcard", "charge card", "card account",
+                "line of credit", "credit line", "heloc",
+                "visa", "mastercard", "master card",
+                "amex", "american express", "discover", "diners")),
+    ("checking", ("chequing", "checking", "current account", "demand deposit",
+                  "dda", "transaction account", "everyday", "now account")),
+    ("savings", ("savings", "saving", "money market", "tfsa", "isa",
+                 "certificate of deposit", "gic", "term deposit")),
+)
+
+# TRAP 2: "Credit Union Checking" is a CHECKING account -- here "credit" names
+# the institution, not the product. Removed before the credit keywords run.
+# Note this deliberately leaves "Acme Credit Union Visa" matching as credit,
+# which is right: that one really is a card.
+_CREDIT_UNION = re.compile(r"\bcredit union\b")
 
 DEFAULT_CURRENCY = "USD"
 
 
 def normalize_account_type(raw: str | None) -> str:
-    """Free text from the statement -> checking|savings|credit|unknown."""
+    """Free text from the statement -> checking|savings|credit|unknown.
+
+    Biased against claiming "credit", because the two failure modes cost very
+    different amounts. Missing a credit card (-> unknown) degrades visibly:
+    reconciliation reports reconciled=False and no payoff entry is produced.
+    Misreading a chequing account AS credit inverts reconciliation silently
+    and makes Stage 9 offer to amortize a chequing account. When in doubt,
+    fall through to unknown.
+    """
     if not raw:
         return "unknown"
-    return _ACCOUNT_TYPES.get(" ".join(raw.split()).lower(), "unknown")
+    text = _CREDIT_UNION.sub(" ", " ".join(str(raw).split()).lower())
+    for account_type, keywords in _TYPE_RULES:
+        if any(re.search(rf"\b{re.escape(k)}\b", text) for k in keywords):
+            return account_type
+    return "unknown"
 
 
 def last4(account_number: str | None) -> str | None:
