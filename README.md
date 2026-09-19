@@ -3,8 +3,13 @@
 Backend for the personal-finance dashboard. Ingests parsed bank-statement JSON
 and serves analytics to the React frontend.
 
-**Frontend devs:** this page gets you running. For what the API actually
-returns — every field, TypeScript types, conventions — see **[API.md](API.md)**.
+**Frontend devs, start here:**
+
+| Doc | For |
+|---|---|
+| This page | Getting the backend running |
+| **[FRONTEND.md](FRONTEND.md)** | **How to build the UI against Stage 0 — start here** |
+| [API.md](API.md) | Reference: every field, TypeScript types, conventions |
 
 ---
 
