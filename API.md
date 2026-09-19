@@ -130,6 +130,7 @@ verification work *visible*. Worth real estate on screen, not a footer.
 |---|---|---|
 | `id` | `string` | Slug, e.g. `"chase-4821"`. Join key for `subscriptions.account_id` and `payoff.account_id`. |
 | `bank_name` | `string \| null` | Null if the statement didn't print it |
+| `account_holder_name` | `string \| null` | Name as printed on the statement. Null if absent. |
 | `account_last4` | `string \| null` | **Last 4 digits only.** The full number is never stored or returned. |
 | `account_type` | `string` | Always one of `checking` / `savings` / `credit` / `unknown` |
 | `closing_balance` | `number \| null` | On a credit card this is the amount *owed* |
@@ -264,6 +265,7 @@ export type AccountType = "checking" | "savings" | "credit" | "unknown";
 export interface Account {
   id: string;
   bank_name: string | null;
+  account_holder_name: string | null;
   account_last4: string | null;
   account_type: AccountType;   // plain `string` in the OpenAPI schema
   closing_balance: number | null;
@@ -410,7 +412,11 @@ you know where things live if you need to look.
 be renamed or removed. If you need a field that isn't here, ask — adding is
 cheap, and it's much cheaper than you shipping a workaround.
 
-Two changes are already under consideration:
+**Changes since first publish:**
+
+- `accounts[].account_holder_name` added — name as printed on the statement.
+
+Two more are under consideration:
 
 - `subscriptions[].kind` — `"fixed"` vs `"variable"`, distinguishing a true
   subscription (same amount monthly) from a variable bill like electricity.

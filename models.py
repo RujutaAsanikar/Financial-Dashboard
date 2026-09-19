@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class Account(BaseModel):
     id: str
     bank_name: str | None = None
+    account_holder_name: str | None = None
     account_last4: str | None = None
     account_type: str
     closing_balance: float | None = None

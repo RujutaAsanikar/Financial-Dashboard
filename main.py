@@ -35,6 +35,7 @@ MOCK_DASHBOARD: dict = {
         {
             "id": "chase-4821",
             "bank_name": "Chase",
+            "account_holder_name": "Jane Doe",
             "account_last4": "4821",
             "account_type": "credit",
             "closing_balance": 3204.18,
@@ -44,6 +45,7 @@ MOCK_DASHBOARD: dict = {
         {
             "id": "pnc-1093",
             "bank_name": "PNC",
+            "account_holder_name": "Jane Doe",
             "account_last4": "1093",
             "account_type": "checking",
             "closing_balance": 5417.62,
