@@ -1,0 +1,256 @@
+{
+  "bank_name": "Chase",
+  "bank_address": "270 Park Ave, New York NY 10017",
+  "account_holder_name": "Jane Doe",
+  "account_number": "****-****-****-4821",
+  "account_type": "Credit Card",
+  "statement_period_start": "2026-08-18",
+  "statement_period_end": "2026-09-17",
+  "currency": "USD",
+  "opening_balance": 2891.44,
+  "closing_balance": 3583.83,
+  "total_withdrawals": 1142.39,
+  "total_deposits": 450.0,
+  "transactions": [
+    {
+      "date": "2026-08-18",
+      "description": "SQ *COFFEE TREE ROASTER 04213 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 6.25,
+      "deposit": null,
+      "balance": 2897.69
+    },
+    {
+      "date": "2026-08-19",
+      "description": "GIANT EAGLE #6423 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 84.12,
+      "deposit": null,
+      "balance": 2981.81
+    },
+    {
+      "date": "2026-08-20",
+      "description": "TST* NOODLEHEAD - PITTSBURGH",
+      "reference": null,
+      "withdrawal": 31.4,
+      "deposit": null,
+      "balance": 3013.21
+    },
+    {
+      "date": "2026-08-21",
+      "description": "AUTOMATIC PAYMENT - THANK YOU",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 450.0,
+      "balance": 2563.21
+    },
+    {
+      "date": "2026-08-22",
+      "description": "NETFLIX.COM 866-579-7172 CA",
+      "reference": null,
+      "withdrawal": 17.99,
+      "deposit": null,
+      "balance": 2581.2
+    },
+    {
+      "date": "2026-08-23",
+      "description": "PAYPAL *SPOTIFYUSA 4029357733",
+      "reference": null,
+      "withdrawal": 11.99,
+      "deposit": null,
+      "balance": 2593.19
+    },
+    {
+      "date": "2026-08-24",
+      "description": "CHECKCARD 0824 TARGET 00012345 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 62.48,
+      "deposit": null,
+      "balance": 2655.67
+    },
+    {
+      "date": "2026-08-25",
+      "description": "UBER *TRIP HELP.UBER.COM CA",
+      "reference": null,
+      "withdrawal": 18.75,
+      "deposit": null,
+      "balance": 2674.42
+    },
+    {
+      "date": "2026-08-26",
+      "description": "SQ *COFFEE TREE ROASTER 04213 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 5.5,
+      "deposit": null,
+      "balance": 2679.92
+    },
+    {
+      "date": "2026-08-27",
+      "description": "AMZN MKTP US*2K4LM8 AMZN.COM/BILL WA",
+      "reference": null,
+      "withdrawal": 43.21,
+      "deposit": null,
+      "balance": 2723.13
+    },
+    {
+      "date": "2026-08-28",
+      "description": "SHELL OIL 57445123 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 48.9,
+      "deposit": null,
+      "balance": 2772.03
+    },
+    {
+      "date": "2026-08-29",
+      "description": "TST* NOODLEHEAD - PITTSBURGH",
+      "reference": null,
+      "withdrawal": 27.85,
+      "deposit": null,
+      "balance": 2799.88
+    },
+    {
+      "date": "2026-08-30",
+      "description": "GIANT EAGLE #6423 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 76.33,
+      "deposit": null,
+      "balance": 2876.21
+    },
+    {
+      "date": "2026-08-31",
+      "description": "SQ *COFFEE TREE ROASTER 04213 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 6.25,
+      "deposit": null,
+      "balance": 2882.46
+    },
+    {
+      "date": "2026-09-01",
+      "description": "ADOBE *CREATIVE CLOUD 408-536-6000 CA",
+      "reference": null,
+      "withdrawal": 22.99,
+      "deposit": null,
+      "balance": 2905.45
+    },
+    {
+      "date": "2026-09-02",
+      "description": "CHECKCARD 0902 TARGET 00098765 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 38.17,
+      "deposit": null,
+      "balance": 2943.62
+    },
+    {
+      "date": "2026-09-03",
+      "description": "LYFT *RIDE THU 855-865-9553 CA",
+      "reference": null,
+      "withdrawal": 14.6,
+      "deposit": null,
+      "balance": 2958.22
+    },
+    {
+      "date": "2026-09-04",
+      "description": "TRADER JOES #0658 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 55.02,
+      "deposit": null,
+      "balance": 3013.24
+    },
+    {
+      "date": "2026-09-05",
+      "description": "SQ *COFFEE TREE ROASTER 04213 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 5.5,
+      "deposit": null,
+      "balance": 3018.74
+    },
+    {
+      "date": "2026-09-06",
+      "description": "INTEREST CHARGE ON PURCHASES",
+      "reference": null,
+      "withdrawal": 58.44,
+      "deposit": null,
+      "balance": 3077.18
+    },
+    {
+      "date": "2026-09-07",
+      "description": "PAYPAL *STEAM GAMES 4029357733",
+      "reference": null,
+      "withdrawal": 29.99,
+      "deposit": null,
+      "balance": 3107.17
+    },
+    {
+      "date": "2026-09-08",
+      "description": "GIANT EAGLE #0122 CRANBERRY PA",
+      "reference": null,
+      "withdrawal": 91.76,
+      "deposit": null,
+      "balance": 3198.93
+    },
+    {
+      "date": "2026-09-09",
+      "description": "TST* NOODLEHEAD - PITTSBURGH",
+      "reference": null,
+      "withdrawal": 22.15,
+      "deposit": null,
+      "balance": 3221.08
+    },
+    {
+      "date": "2026-09-10",
+      "description": "DUOLINGO 415-555-0132 CA",
+      "reference": null,
+      "withdrawal": 12.99,
+      "deposit": null,
+      "balance": 3234.07
+    },
+    {
+      "date": "2026-09-11",
+      "description": "SQ *COFFEE TREE ROASTER 04213 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 6.25,
+      "deposit": null,
+      "balance": 3240.32
+    },
+    {
+      "date": "2026-09-12",
+      "description": "UBER EATS 8005928996 CA",
+      "reference": null,
+      "withdrawal": 34.88,
+      "deposit": null,
+      "balance": 3275.2
+    },
+    {
+      "date": "2026-09-13",
+      "description": "HOME DEPOT #4512 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 127.43,
+      "deposit": null,
+      "balance": 3402.63
+    },
+    {
+      "date": "2026-09-14",
+      "description": "NETFLIX.COM 866-579-7172 CA",
+      "reference": null,
+      "withdrawal": 17.99,
+      "deposit": null,
+      "balance": 3420.62
+    },
+    {
+      "date": "2026-09-15",
+      "description": "WHOLEFDS PGH#10248 PITTSBURGH PA",
+      "reference": null,
+      "withdrawal": 68.21,
+      "deposit": null,
+      "balance": 3488.83
+    },
+    {
+      "date": "2026-09-16",
+      "description": "ANNUAL MEMBERSHIP FEE",
+      "reference": null,
+      "withdrawal": 95.0,
+      "deposit": null,
+      "balance": 3583.83
+    }
+  ]
+}
