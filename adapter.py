@@ -2,6 +2,55 @@
 
 The isolation layer. If the parser's output shape changes, this is the only
 file that changes. See CLAUDE.md sections 2 and 3 for the contract.
+
+
+TWO CONVENTIONS, AND ONLY ONE OF THEM IS OURS
+---------------------------------------------
+
+`amount` is normalized by us and is account-type independent:
+
+    amount = (deposit or 0) - (withdrawal or 0)
+
+Money out is negative, money in is positive, on every account type. Nothing
+downstream ever needs to branch on account_type to interpret an amount.
+
+`balance`, `opening_balance` and `closing_balance` are NOT normalized. They are
+the statement's own printed figures, carried through untouched, so their
+meaning is whatever the bank meant -- and that changes with the account type:
+
+    checking / savings   balance is an ASSET     (money you have)
+    credit               balance is a LIABILITY  (money you owe)
+
+which inverts the relationship between the two quantities:
+
+    account_type        deposit/payment   purchase/withdrawal   bridge
+    ----------------------------------------------------------------------
+    checking, savings   balance rises     balance falls         +amount
+    credit              balance falls     balance RISES         -amount
+
+Stated as an invariant, with sign = -1 for credit and +1 otherwise:
+
+    balance[i] - balance[i-1]  ==  amount[i] * sign
+    closing_balance - opening_balance  ==  sum(amounts) * sign
+
+The header totals `total_deposits` / `total_withdrawals` are in AMOUNT space,
+not balance space -- both are positive magnitudes and their difference
+reconstructs sum(amounts). They take the same sign factor, not the opposite.
+
+Worked from fixtures/credit.json:
+
+    2026-08-19  Giant Eagle  amount  -84.12   balance 2897.69 -> 2981.81  (+84.12)
+    2026-08-21  Payment      amount +450.00   balance 3013.21 -> 2563.21  (-450.00)
+    sum(amounts) = -692.39      closing - opening = +692.39
+
+A positive `closing_balance` on a credit account is CORRECT and must not be
+"fixed" by negating it: Stage 8 consumes it directly as the amount to pay off,
+and Stage 9 surfaces it as-is in accounts[].closing_balance.
+
+Any code that compares a balance against an amount must apply the sign factor.
+Today that is exactly one place -- Stage 2 reconcile(). Everything else
+(transfers, recurring, the summary, by_category, spending_over_time) reads
+amounts only and is unaffected.
 """
 
 import hashlib

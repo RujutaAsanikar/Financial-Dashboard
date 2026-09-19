@@ -395,6 +395,22 @@ arrive in display order. Don't re-sort unless the user clicks a column.
 with an APR. `subscriptions` is `[]` before enough history accumulates —
 recurring detection needs 3+ occurrences of a merchant.
 
+**6. A balance means the opposite thing on a credit card.** `closing_balance`
+is the bank's own printed figure, not something we normalize, so it's an
+*asset* on checking and savings (money you have) and a *liability* on credit
+(money you owe). Both are normally **positive**:
+
+| `account_type` | `closing_balance: 3204.18` means | Goes negative when |
+|---|---|---|
+| `checking`, `savings` | you have $3,204.18 | overdrawn |
+| `credit` | you **owe** $3,204.18 | you overpaid the card |
+
+So don't render it with one shared label. "Balance" on a chequing card and
+"Balance" on a credit card are opposite quantities, and a user reading
+*$3,204.18* next to a green up-arrow on their credit card will misread it
+badly. Branch on `account_type` — "Available" vs "Owed" / "Current balance".
+`payoff[].balance` is always the credit sense: positive, amount owed.
+
 ---
 
 ## 7. Backend file map
