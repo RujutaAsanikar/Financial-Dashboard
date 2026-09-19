@@ -85,6 +85,12 @@ def enrich(title: str, country: str, api_key: str) -> dict:
         data=body,
         headers={
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            # urllib's default "Python-urllib/3.x" is blocked at Cloudflare's
+            # edge with error 1010 before the request reaches the API. Any
+            # ordinary client string gets through, as curl does in Triqai's
+            # own documented example.
+            "User-Agent": "dashboard-backend-probe/1.0",
             "X-API-Key": api_key,
             "Idempotency-Key": "probe-" + hashlib.sha256(title.encode()).hexdigest()[:32],
         },
@@ -138,9 +144,19 @@ def main() -> int:
         try:
             got = summarize(enrich(case["title"], case["country"], api_key))
         except urllib.error.HTTPError as exc:
-            detail = exc.read().decode(errors="replace")[:300]
-            print(f"        HTTP {exc.code}: {detail}\n")
-            results.append({**case, "error": f"HTTP {exc.code}"})
+            detail = exc.read().decode(errors="replace")
+            print(f"        HTTP {exc.code}: {detail[:300]}")
+            # Distinguish "the edge blocked us" from "the API said no", since
+            # they need completely different fixes and only one costs credits.
+            if "error code: 10" in detail or "cloudflare" in detail.lower():
+                print("        ^ Cloudflare edge block, not a Triqai response.")
+                print("          The request never reached the API, so no credit was used.")
+            elif exc.code in (401, 403):
+                print("        ^ Reached the API and was rejected: check the key.")
+            elif exc.code == 429:
+                print("        ^ Rate limited or out of credits.")
+            print()
+            results.append({**case, "error": f"HTTP {exc.code}", "body": detail[:500]})
             continue
         except Exception as exc:  # network, timeout, malformed JSON
             print(f"        FAILED: {type(exc).__name__}: {exc}\n")
