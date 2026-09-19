@@ -21,11 +21,28 @@ ENDPOINT = "https://api.triqai.com/v1/transactions/enrich"
 TIMEOUT_SECONDS = 8
 
 # Merchant answers below this confidence are ignored in favour of the regex.
-# 55 was chosen deliberately: it accepts "Hydro One" (55), which the probe
-# showed to be an invented Ontario utility inferred from the bare word
-# "hydro". Confidence is stored alongside every cached row so a later review
-# can raise this without re-spending credits.
-CONFIDENCE_FLOOR = int(os.getenv("TRIQ_CONFIDENCE_FLOOR", "55"))
+#
+# 70 is not a guess. Measured over all 45 fixture descriptions, the score is
+# an almost perfect discriminator between a merchant Triqai recognised and
+# one it fabricated from a generic noun:
+#
+#     85-100   12 results,  0 invented
+#     70-84     3 results,  0 invented
+#     55-69     3 results,  2 invented   88 Supermarket, Hydro One
+#      0-54     8 results,  6 invented   Moja Coffee, Home Hardware,
+#                                        Anytime Fitness, Canadian Tire Gas
+#                                        Bar, Desjardins Employer Solutions
+#
+# Everything below 70 is roughly a coin flip, and the failure mode is not a
+# near miss -- "Payroll Deposit - EMPLOYER" became "Desjardins Employer
+# Solutions", a specific Quebec institution invented from the word
+# "EMPLOYER", attached to the user's salary. Raising the floor from 55 to 70
+# costs exactly one correct answer, "Steam" at 55, where the regex already
+# yields "Steam Games".
+#
+# Confidence is stored on every cached row, so this can be re-tuned later
+# without spending another credit.
+CONFIDENCE_FLOOR = int(os.getenv("TRIQ_CONFIDENCE_FLOOR", "70"))
 
 
 def api_key() -> str | None:
@@ -87,9 +104,18 @@ def enrich(title: str, country: str = "US", txn_type: str = "expense") -> dict |
 
 
 def extract(payload: dict | None) -> dict:
-    """Pull the fields we use out of a response. Total on malformed input."""
+    """Pull the fields we use out of a response. Total on malformed input.
+
+    `error` separates "the call failed" from "Triqai looked and found no
+    merchant". They are not interchangeable: the second is a real answer
+    worth caching forever, the first is a network blip that must never be
+    written down as one. A timeout on GIANT EAGLE #6423 was cached as
+    "no merchant" while the identical chain at another store resolved at
+    confidence 85.
+    """
     if not isinstance(payload, dict):
-        return {"merchant": None, "category": None, "confidence": None, "intermediary": None}
+        return {"merchant": None, "category": None, "confidence": None,
+                "intermediary": None, "error": True}
 
     data = payload.get("data") or {}
     entities = data.get("entities") or []
@@ -115,6 +141,7 @@ def extract(payload: dict | None) -> dict:
         "category": category.get("name") or None,
         "confidence": confidence,
         "intermediary": ((pick("intermediary").get("data")) or {}).get("name"),
+        "error": False,
     }
 
 

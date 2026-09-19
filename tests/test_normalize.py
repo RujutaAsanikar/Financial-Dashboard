@@ -141,6 +141,32 @@ def test_trailing_merchant_token_survives(raw, expected):
 
 # --- merchants named after numbers ----------------------------------------
 
+@pytest.mark.parametrize("raws,expected", [
+    # Amazon prints a fresh order code every purchase.
+    (["AMZN MKTP US*2K4LM8 AMZN.COM/BILL WA",
+      "AMZN MKTP US*9P2QR7 AMZN.COM/BILL WA",
+      "AMZN MKTP US*4XB1ZZ AMZN.COM/BILL WA"], "Amzn Mktp Amzn.Com/Bill"),
+    # Lyft appends the day of the week.
+    (["LYFT *RIDE THU 855-865-9553 CA",
+      "LYFT *RIDE MON 855-865-9553 CA",
+      "LYFT *RIDE SAT 855-865-9553 CA"], "Lyft *Ride"),
+])
+def test_per_transaction_tokens_do_not_split_one_merchant(raws, expected):
+    """Found by the eyeball check CLAUDE.md mandates, not by a unit test.
+
+    These tokens mix letters and digits, so the 3+ digit rule left them
+    alone and every single purchase became its own merchant -- meaning
+    Stage 7 could never see Amazon or Lyft as recurring.
+    """
+    assert {N.normalize(raw) for raw in raws} == {expected}
+
+
+def test_two_visits_to_one_store_share_a_key():
+    """The counterpart: differing dates and sequence numbers must NOT split."""
+    assert N.normalize("CHECKCARD 0824 TARGET 00012345 PITTSBURGH PA") == \
+           N.normalize("CHECKCARD 0902 TARGET 00098765 PITTSBURGH PA")
+
+
 @pytest.mark.parametrize("raw,expected", [
     ("24 HOUR FITNESS", "24 Hour Fitness"),
     ("5 GUYS BURGERS", "5 Guys Burgers"),

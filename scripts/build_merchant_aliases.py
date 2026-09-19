@@ -90,18 +90,27 @@ def main() -> int:
         return 1
 
     rows = list(existing.values())
-    resolved = failed = 0
+    resolved = no_merchant = errored = 0
 
     for index, (raw, country) in enumerate(todo, 1):
         result = triq.lookup(raw, country=country)
         merchant = result.get("merchant")
         confidence = result.get("confidence")
 
+        if result.get("error"):
+            # A timeout or edge block is not an answer. Writing it down as
+            # "no merchant" would permanently poison this description --
+            # exactly what happened to GIANT EAGLE #6423, cached as unknown
+            # while the same chain resolved at 85 one row earlier.
+            errored += 1
+            print(f"  [{index}/{len(todo)}] ERR {raw[:46]:46} -> call failed, NOT cached")
+            continue
+
         if merchant:
             resolved += 1
             marker = "ok " if (confidence or 0) >= triq.CONFIDENCE_FLOOR else "LOW"
         else:
-            failed += 1
+            no_merchant += 1
             marker = "-- "
 
         print(f"  [{index}/{len(todo)}] {marker} {raw[:46]:46} -> "
@@ -126,7 +135,9 @@ def main() -> int:
                  and str(r["confidence"] or 0).replace(".", "").isdigit()
                  and float(r["confidence"] or 0) >= triq.CONFIDENCE_FLOOR)
     print(f"\nWrote {len(rows)} rows to {ALIAS_PATH.relative_to(ROOT)}")
-    print(f"  {resolved} resolved, {failed} returned no merchant this run")
+    print(f"  {resolved} resolved, {no_merchant} genuinely had no merchant")
+    if errored:
+        print(f"  {errored} call(s) FAILED and were not cached -- re-run to retry them")
     print(f"  {usable}/{len(rows)} usable at floor {triq.CONFIDENCE_FLOOR}; "
           f"the rest fall back to regex")
     print("\nReview the CSV before committing. Check every LOW row -- the probe "

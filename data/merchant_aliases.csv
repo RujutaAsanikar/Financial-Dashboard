@@ -1,0 +1,45 @@
+raw_description,merchant,category,confidence,source
+ADOBE *CREATIVE CLOUD 408-536-6000 CA,Adobe,Design & Creative Software,45,triqai
+AMZN MKTP US*2K4LM8 AMZN.COM/BILL WA,Amazon,Online Marketplaces,92,triqai
+ANNUAL MEMBERSHIP FEE,,Uncategorized,,triqai-nomerchant
+ATM Withdrawal - FIRST BANK,First Bank,Banking,70,triqai
+ATM Withdrawal - INTERAC,,Cash & ATM,,triqai-nomerchant
+AUTOMATIC PAYMENT - THANK YOU,,Uncategorized,,triqai-nomerchant
+CHECKCARD 0824 TARGET 00012345 PITTSBURGH PA,Target,Department Stores,92,triqai
+CHECKCARD 0902 TARGET 00098765 PITTSBURGH PA,Target,Department Stores,92,triqai
+Cheque No. - 412,,Uncategorized,,triqai-nomerchant
+DUOLINGO 415-555-0132 CA,Duolingo,Online Learning,95,triqai
+Fees - Interac,,Uncategorized,,triqai-nomerchant
+Fees - Monthly,,Uncategorized,,triqai-nomerchant
+Fees - Overdraft,,Banking,,triqai-nomerchant
+GIANT EAGLE #0122 CRANBERRY PA,Giant Eagle,Groceries,85,triqai
+HOME DEPOT #4512 PITTSBURGH PA,Home Depot,Home Improvement,88,triqai
+INTEREST CHARGE ON PURCHASES,,Banking,,triqai-nomerchant
+Interac Purchase - BOOKSTORE,,Uncategorized,,triqai-nomerchant
+Interac Purchase - COFFEE,Moja Coffee,Cafes,45,triqai
+Interac Purchase - GAS BAR,Canadian Tire Gas Bar,Fuel,45,triqai
+Interac Purchase - HARDWARE,Home Hardware,Home Improvement,45,triqai
+Interac Purchase - PHARMACY,,Uncategorized,,triqai-nomerchant
+Interac Purchase - RESTAURANT,,Uncategorized,,triqai-nomerchant
+Interac Purchase - SUPERMARKET,88 Supermarket,Groceries,55,triqai
+Interac Refund - HARDWARE,Home Hardware,Home Improvement,45,triqai
+LYFT *RIDE THU 855-865-9553 CA,Lyft,Ride-sharing,85,triqai
+NETFLIX.COM 866-579-7172 CA,Netflix,Video Streaming,85,triqai
+PAYPAL *SPOTIFYUSA 4029357733,Spotify,Music Streaming,92,triqai
+PAYPAL *STEAM GAMES 4029357733,Steam,Gaming,55,triqai
+Payroll Deposit - EMPLOYER,Desjardins Employer Solutions,Professional Services,45,triqai
+Pre-Auth. Payment - GYM,Anytime Fitness,Fitness,45,triqai
+Pre-Auth. Payment - INSURANCE,,Uncategorized,,triqai-nomerchant
+Pre-Auth. Payment - MORTGAGE,,Uncategorized,,triqai-nomerchant
+SHELL OIL 57445123 PITTSBURGH PA,Shell,Fuel,85,triqai
+SQ *COFFEE TREE ROASTER 04213 PITTSBURGH PA,Coffee Tree Roasters,Cafes,70,triqai
+TRADER JOES #0658 PITTSBURGH PA,Trader Joe's,Groceries,92,triqai
+TST* NOODLEHEAD - PITTSBURGH,Noodlehead,Restaurants,70,triqai
+UBER *TRIP HELP.UBER.COM CA,Uber,Ride-sharing,85,triqai
+UBER EATS 8005928996 CA,,Food Delivery,,triqai-nomerchant
+WHOLEFDS PGH#10248 PITTSBURGH PA,Whole Foods Market,Groceries,45,triqai
+Web Bill Payment - HYDRO,Hydro One,Utilities,55,triqai
+Web Bill Payment - INTERNET,,Uncategorized,,triqai-nomerchant
+Web Bill Payment - MOBILE,,Uncategorized,,triqai-nomerchant
+Web Bill Payment - VISA,,Uncategorized,,triqai-nomerchant
+Web Funds Transfer - To SAVINGS,,Savings Transfer,,triqai-nomerchant

@@ -72,6 +72,14 @@ _LONG_DIGITS = re.compile(r"\b\d{3,}\b")
 # Uppercase-only, and anchored to the end. Case-insensitive here would strip
 # the "Pa" it produced on a previous pass and break idempotence.
 _TRAILING_STATE = re.compile(r"\s+[A-Z]{2}\s*$")
+# Order/auth codes: letters and digits mixed in one token. Amazon prints
+# "US*2K4LM8" and it changes every order, so without this every purchase
+# becomes its own merchant and Stage 7 can never see Amazon as recurring.
+# Requires 2+ digits and 5+ characters, which spares "7-Eleven" (one digit)
+# and short names like "A1".
+_ORDER_CODE = re.compile(r"\b(?=[A-Za-z0-9*]{5,}\b)(?=(?:[^\d\s]*\d){2})[A-Za-z0-9*]+\b")
+# Day-of-week suffixes: Lyft prints "RIDE THU", which splits every ride.
+_TRAILING_DAY = re.compile(r"\s+(MON|TUE|WED|THU|FRI|SAT|SUN)\s*$", re.I)
 _WHITESPACE = re.compile(r"\s+")
 _EDGE_PUNCTUATION = " -.,*/|:;#"
 
@@ -116,8 +124,11 @@ def normalize(description: str) -> str:
     text = _HASH_NUMBER.sub(" ", text)
     text = _LONG_DIGITS.sub(" ", text)
 
-    # 4. Trailing two-letter state code.
+    # 4. Trailing two-letter state code, then the per-transaction tokens that
+    #    would otherwise split one merchant across its own occurrences.
     text = _TRAILING_STATE.sub(" ", text)
+    text = _ORDER_CODE.sub(" ", text)
+    text = _TRAILING_DAY.sub(" ", text)
 
     # 5. Leading and trailing reference tokens. Edges only -- never interior,
     #    and never a token that contains letters.
