@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import aggregate
 import db
+from adapter import normalize_account_type
 from models import DashboardResponse, HealthResponse
 
 logging.basicConfig(level=logging.INFO)
@@ -382,6 +383,84 @@ async def upload(
 
     logger.info("Upload %s: %d new of %d rows", file.filename,
                 result["inserted"], result["submitted"])
+    return aggregate.build_dashboard()
+
+
+@app.post("/api/upload-batch", response_model=DashboardResponse)
+async def upload_batch(
+    files: list[UploadFile] = File(...),
+    apr: float | None = Form(default=None),
+    credit_limit: float | None = Form(default=None),
+) -> dict:
+    """Ingest several statements in one request.
+
+    Preferred over looping /api/upload from the client. Transfer detection
+    runs across accounts, so sending a chequing and a credit statement
+    separately leaves the card payment counted as spending until the second
+    one lands -- the dashboard visibly corrects itself mid-demo.
+
+    apr and credit_limit apply to whichever statement turns out to be a
+    credit account; they are ignored on the others, so one form serves a
+    mixed batch.
+
+    A file that fails is skipped rather than failing the batch: five good
+    statements should not be lost because the sixth was a holiday snap. The
+    whole batch failing is the only 422.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files were uploaded.")
+
+    ingested, failures = [], []
+    for upload_file in files:
+        raw = await upload_file.read()
+        name = upload_file.filename or "unnamed"
+
+        if not raw:
+            failures.append({"file": name, "error": "The file is empty."})
+            continue
+        if len(raw) > MAX_UPLOAD_BYTES:
+            failures.append({"file": name, "error": "File is too large."})
+            continue
+
+        try:
+            parser_json = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            failures.append({"file": name, "error": f"Not valid JSON: {exc}"})
+            continue
+
+        # One form serves a mixed batch, so apr only reaches the statement it
+        # describes. Applying it to every file would stamp an APR onto a
+        # chequing account and surface it in accounts[].apr.
+        is_credit = (
+            isinstance(parser_json, dict)
+            and normalize_account_type(parser_json.get("account_type")) == "credit"
+        )
+
+        try:
+            result = aggregate.ingest(
+                parser_json,
+                apr=apr if is_credit else None,
+                credit_limit=credit_limit if is_credit else None,
+            )
+            ingested.append({"file": name, **result})
+        except ValueError as exc:
+            failures.append({"file": name, "error": str(exc)})
+        except Exception as exc:
+            logger.exception("Batch upload failed on %s", name)
+            failures.append({"file": name, "error": str(exc)})
+
+    if failures:
+        logger.warning("Batch: %d of %d file(s) failed: %s",
+                       len(failures), len(files),
+                       "; ".join(f["file"] for f in failures))
+    if not ingested:
+        raise HTTPException(
+            status_code=422,
+            detail="No file could be processed. "
+                   + "; ".join(f'{f["file"]}: {f["error"]}' for f in failures))
+
+    logger.info("Batch: ingested %d of %d file(s), %d new row(s)",
+                len(ingested), len(files), sum(i["inserted"] for i in ingested))
     return aggregate.build_dashboard()
 
 

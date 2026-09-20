@@ -248,14 +248,50 @@ def test_merchant_is_not_populated_in_stage_1():
     assert txns[0]["is_recurring"] is False
 
 
-def test_empty_row_with_no_amount_is_skipped():
+def test_every_zero_amount_row_is_skipped():
+    """Broader than CLAUDE.md, which skips a zero-amount row only when the
+    description is ALSO empty.
+
+    That is too narrow for real extractor output: OCR picks up section
+    headings like "Banking/Debit Card Withdrawals and Purchases" as rows with
+    plenty of text and no amount. A row that moves no money contributes zero
+    to every sum, category and average by definition, so dropping it loses
+    nothing and keeps the transaction list honest.
+    """
     payload = {"bank_name": "B", "account_number": "1234", "transactions": [
         {"date": "2026-08-01", "description": "   ", "withdrawal": None, "deposit": None},
         {"date": "2026-08-02", "description": "", "withdrawal": 0, "deposit": 0},
-        {"date": "2026-08-03", "description": "kept", "withdrawal": None, "deposit": None},
+        {"date": "2026-08-03", "description": "has text but no amount",
+         "withdrawal": None, "deposit": None},
+        {"date": "2026-08-04", "description": "real spend", "withdrawal": 12.50,
+         "deposit": None},
     ]}
     _, txns = adapt(payload)
-    assert [t["description"] for t in txns] == ["kept"]
+    assert [t["description"] for t in txns] == ["real spend"]
+
+
+def test_a_row_that_nets_to_zero_is_also_skipped():
+    """Both columns filled with the same figure moves no money either."""
+    _, txns = adapt(one(withdrawal=50.0, deposit=50.0))
+    assert txns == []
+
+
+def test_dropping_zero_rows_does_not_change_any_total():
+    """The justification, asserted: a zero row is invisible to every figure,
+    so removing it cannot move one."""
+    rows = [
+        {"date": "2026-08-01", "description": "spend", "withdrawal": 30.0,
+         "deposit": None, "balance": None, "reference": None},
+        {"date": "2026-08-02", "description": "section heading", "withdrawal": None,
+         "deposit": None, "balance": None, "reference": None},
+        {"date": "2026-08-03", "description": "income", "withdrawal": None,
+         "deposit": 100.0, "balance": None, "reference": None},
+    ]
+    _, txns = adapt({"bank_name": "B", "account_number": "1234",
+                     "statement_period_start": "2026-08-01", "transactions": rows})
+
+    assert len(txns) == 2
+    assert sum(t["amount"] for t in txns) == 70.0
 
 
 # --- the account dict's shape ----------------------------------------------
@@ -414,3 +450,182 @@ def test_credit_fixture_matches_spec_manual_check():
     assert "4821" in acct["account_last4"]
     assert all(t["amount"] < 0 for t in txns if t["description"].startswith("SQ"))
     assert any(t["amount"] > 0 for t in txns), "credit fixture needs a payment"
+
+
+# --- dates stranded in the description ------------------------------------
+
+from adapter import recover_date_from_description  # noqa: E402
+
+
+def statement(rows, start="2022-06-01", end="2022-06-30"):
+    return {"bank_name": "Finance Bank", "account_number": "0000000098765",
+            "account_type": "Checking", "statement_period_start": start,
+            "statement_period_end": end, "transactions": rows}
+
+
+def undated(description, **extra):
+    return {"date": None, "description": description, "reference": None,
+            "withdrawal": 10.0, "deposit": None, "balance": None, **extra}
+
+
+def test_a_leading_date_in_the_description_is_recovered():
+    """Gemini returns date:null and keeps '06/01' inside the description when
+    a statement does not visually separate the columns. The parser's own
+    to_iso_date cannot help -- every pattern it knows requires a year."""
+    _, txns = adapt(statement([undated("06/01 Rent Bill")]))
+
+    assert len(txns) == 1
+    assert txns[0]["date"] == date(2022, 6, 1)
+    assert txns[0]["description"] == "06/01 Rent Bill", "description stays verbatim"
+
+
+def test_recovery_never_overrides_a_date_the_parser_did_read():
+    _, txns = adapt(statement([
+        {"date": "2022-06-15", "description": "06/01 Rent Bill",
+         "withdrawal": 10.0, "deposit": None, "balance": None, "reference": None}]))
+    assert txns[0]["date"] == date(2022, 6, 15)
+
+
+def test_a_recovered_date_must_fall_inside_the_statement_period():
+    """Without this, a reference number reads as a date.
+
+    The rejected rows are no longer dropped -- the statement-start fallback
+    catches them -- but the point stands: neither is given the bogus date it
+    appeared to contain.
+    """
+    _, txns = adapt(statement([undated("12/34 Payment"),        # impossible day
+                               undated("09/15 Out of period"),  # real date, wrong month
+                               undated("06/08 Electric Bill")]))
+
+    assert [t["date"] for t in txns] == [
+        date(2022, 6, 1),    # fallback, NOT 12/34
+        date(2022, 6, 1),    # fallback, NOT 2022-09-15
+        date(2022, 6, 8),    # genuinely recovered
+    ]
+
+
+def test_a_period_straddling_a_year_end_resolves_both_sides():
+    _, txns = adapt(statement([undated("12/20 December charge"),
+                               undated("01/05 January charge")],
+                              start="2025-12-15", end="2026-01-14"))
+    assert [t["date"] for t in txns] == [date(2025, 12, 20), date(2026, 1, 5)]
+
+
+@pytest.mark.parametrize("description", [
+    "Rent Bill", "Payment 06/01", "ref 9685 06/01", "", "06/01Rent", None, 12345,
+])
+def test_only_a_leading_date_token_counts(description):
+    assert recover_date_from_description(description, "2022-06-01", "2022-06-30") is None
+
+
+def test_recovery_needs_a_statement_period():
+    assert recover_date_from_description("06/01 Rent", None, None) is None
+
+
+def test_the_real_parser_file_recovers_every_row():
+    from pathlib import Path
+    import json as _json
+    path = Path(__file__).resolve().parent.parent / "Bank_Statement_transaction_data_normalized.json"
+    if not path.exists():
+        pytest.skip("parser output not present")
+
+    raw = _json.loads(path.read_text())
+    assert all(r["date"] is None for r in raw["transactions"]), "fixture premise"
+
+    _, txns = adapt(raw)
+    assert len(txns) == len(raw["transactions"]) == 9
+    assert all(t["date"] is not None for t in txns)
+
+
+# --- apr and credit_limit belong to borrowing accounts only ---------------
+
+@pytest.mark.parametrize("account_type", [
+    "Chequing", "Checking", "Savings", "Money Market", "Visa Debit", "Gibberish",
+])
+def test_a_non_credit_account_never_carries_an_apr(account_type):
+    """A chequing account has no APR. One typed into the upload form against
+    one is a mistake, not data, and must not reach accounts[].apr."""
+    acct, _ = adapt({"bank_name": "B", "account_number": "1234",
+                     "account_type": account_type, "transactions": []},
+                    apr=24.99, credit_limit=5000.0)
+
+    assert acct["account_type"] != "credit"
+    assert acct["apr"] is None
+    assert acct["credit_limit"] is None
+
+
+@pytest.mark.parametrize("account_type", [
+    "Credit Card", "Visa", "Visa Signature", "Mastercard", "Line of Credit",
+])
+def test_a_credit_account_keeps_its_apr(account_type):
+    acct, _ = adapt({"bank_name": "B", "account_number": "1234",
+                     "account_type": account_type, "transactions": []},
+                    apr=24.99, credit_limit=5000.0)
+
+    assert acct["account_type"] == "credit"
+    assert acct["apr"] == 24.99
+    assert acct["credit_limit"] == 5000.0
+
+
+def test_dropping_an_apr_does_not_disturb_anything_else():
+    raw = load("checking")
+    plain, plain_txns = adapt(raw)
+    with_apr, with_txns = adapt(raw, apr=24.99, credit_limit=5000.0)
+
+    assert plain == with_apr
+    assert plain_txns == with_txns
+
+
+# --- TEMPORARY: statement-start fallback for undated rows ------------------
+# Remove this block, and the fallback in adapt(), once the parser populates
+# `date`. The dates it produces are fabricated.
+
+def test_an_undated_row_falls_back_to_the_statement_start():
+    _, txns = adapt(statement([undated("No date anywhere")]))
+    assert len(txns) == 1
+    assert txns[0]["date"] == date(2022, 6, 1)
+
+
+def test_the_fallback_is_the_last_resort_not_the_first():
+    """Order matters: a real date wins, then one recovered from the
+    description, and only then the statement start."""
+    _, txns = adapt(statement([
+        {"date": "2022-06-15", "description": "anything", "withdrawal": 1.0,
+         "deposit": None, "balance": None, "reference": None},
+        undated("06/08 Electric Bill"),
+        undated("No date anywhere"),
+    ]))
+    assert [t["date"] for t in txns] == [
+        date(2022, 6, 15),   # the parser's own date
+        date(2022, 6, 8),    # recovered from the description
+        date(2022, 6, 1),    # statement start
+    ]
+
+
+def test_without_a_statement_period_the_row_is_still_dropped():
+    """The fallback needs something to fall back to."""
+    _, txns = adapt({"bank_name": "B", "account_number": "1234",
+                     "statement_period_start": None,
+                     "transactions": [undated("No date anywhere")]})
+    assert txns == []
+
+
+def test_every_fallback_row_lands_on_the_same_day():
+    """Which is why spending_over_time is unreliable for them -- they all
+    collapse into one bucket."""
+    _, txns = adapt(statement([undated(f"Row {i}") for i in range(5)]))
+    assert len({t["date"] for t in txns}) == 1
+
+
+def test_identical_fallback_dates_do_not_fabricate_a_subscription():
+    """The one thing that could have gone badly. Same merchant, same
+    fabricated date, five times -- zero-length gaps, which match_cadence
+    rejects, so no invented subscription reaches the dashboard."""
+    from analyze import find_recurring
+
+    _, txns = adapt(statement([undated("Netflix") for _ in range(5)]))
+    for txn in txns:
+        txn["merchant"] = "Netflix"
+        txn["category"] = "Subscriptions"
+
+    assert find_recurring(txns) == []

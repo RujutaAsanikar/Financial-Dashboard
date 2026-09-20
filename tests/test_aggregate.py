@@ -375,3 +375,82 @@ def test_the_stage_zero_mock_is_still_served(client):
 
 def test_health_still_works(client):
     assert client.get("/api/health").json() == {"ok": True}
+
+
+# --- batch upload ----------------------------------------------------------
+
+def statement_file(name):
+    return (name, (FIXTURES / name).open("rb"), "application/json")
+
+
+def test_batch_upload_ingests_every_file(client):
+    response = client.post("/api/upload-batch", files=[
+        ("files", statement_file("checking.json")),
+        ("files", statement_file("credit.json")),
+    ], data={"apr": "24.99"})
+
+    assert response.status_code == 200
+    body = response.json()
+    DashboardResponse(**body)
+    assert body["summary"]["transaction_count"] == 58
+    assert len(body["accounts"]) == 2
+
+
+def test_batch_finds_the_cross_account_transfer_in_one_request():
+    """The reason batch exists. Uploading these one at a time leaves the card
+    payment counted as spending until the second request lands, so the
+    dashboard visibly corrects itself mid-demo."""
+    client = TestClient(main.app)
+    response = client.post("/api/upload-batch", files=[
+        ("files", statement_file("checking.json")),
+        ("files", statement_file("credit.json")),
+    ], data={"apr": "24.99"})
+
+    assert response.json()["transfers_excluded"]["count"] == 2
+
+
+def test_batch_skips_a_bad_file_rather_than_losing_the_good_ones(client):
+    response = client.post("/api/upload-batch", files=[
+        ("files", statement_file("checking.json")),
+        ("files", ("junk.json", b"not json", "application/json")),
+        ("files", statement_file("credit.json")),
+    ], data={"apr": "24.99"})
+
+    assert response.status_code == 200
+    assert response.json()["summary"]["transaction_count"] == 58
+
+
+def test_batch_fails_only_when_nothing_could_be_processed(client):
+    response = client.post("/api/upload-batch", files=[
+        ("files", ("a.json", b"not json", "application/json")),
+        ("files", ("b.json", b'{"nope": 1}', "application/json")),
+    ])
+
+    assert response.status_code == 422
+    assert "a.json" in response.json()["detail"]
+
+
+def test_batch_is_idempotent(client):
+    files = lambda: [("files", statement_file("checking.json")),
+                     ("files", statement_file("credit.json"))]
+
+    first = client.post("/api/upload-batch", files=files(), data={"apr": "24.99"}).json()
+    second = client.post("/api/upload-batch", files=files(), data={"apr": "24.99"}).json()
+
+    assert first["summary"] == second["summary"]
+
+
+def test_batch_applies_apr_to_the_credit_account_only(client):
+    response = client.post("/api/upload-batch", files=[
+        ("files", statement_file("checking.json")),
+        ("files", statement_file("credit.json")),
+    ], data={"apr": "24.99"}).json()
+
+    by_id = {a["id"]: a for a in response["accounts"]}
+    assert by_id["chase-4821"]["apr"] == 24.99
+    assert by_id["keystone-savings-bank-6789"]["apr"] is None
+    assert len(response["payoff"]) == 1
+
+
+def test_batch_rejects_an_empty_file_list(client):
+    assert client.post("/api/upload-batch", data={}).status_code == 422

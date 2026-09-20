@@ -179,6 +179,51 @@ def parse_date(raw) -> date | None:
     return None
 
 
+# A date stranded at the front of the description: "06/01 Rent Bill".
+# The vision model reads the date and the description as one text run when a
+# statement does not visually separate the columns, so it returns
+# date: null and keeps "06/01" inside the description. The parser's own
+# to_iso_date cannot rescue it either -- every pattern it knows needs a year,
+# and a bare MM/DD has none. The statement period does, which is why this
+# belongs here.
+_LEADING_DATE = re.compile(r"^\s*(\d{1,2})[/-](\d{1,2})(?:\s|$)")
+
+
+def recover_date_from_description(description: str, period_start, period_end):
+    """Pull a leading MM/DD off a description, using the period for the year.
+
+    Only ever consulted when the date field is already null, so it can never
+    override a date the parser did read. Returns None unless the recovered
+    day actually falls inside the statement period -- without that check a
+    reference number like "12/34 Payment" would parse as a date.
+    """
+    if not isinstance(description, str):
+        return None
+    match = _LEADING_DATE.match(description)
+    if not match:
+        return None
+
+    month, day = int(match.group(1)), int(match.group(2))
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return None
+
+    start = parse_date(period_start)
+    end = parse_date(period_end)
+    if start is None:
+        return None
+
+    # A period can straddle a year end: Dec 15 - Jan 14 means a December row
+    # belongs to the start year and a January row to the next.
+    for year in {start.year, (end or start).year}:
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        if start <= candidate <= (end or date(start.year + 1, 12, 31)):
+            return candidate
+    return None
+
+
 def _to_float(value) -> float | None:
     if value is None or isinstance(value, bool):
         return None
@@ -244,12 +289,27 @@ def adapt(parser_json: dict, apr: float | None = None,
         parser_json.get("bank_name"), acct_last4, parser_json.get("statement_period_start")
     )
 
+    # APR and credit limit are properties of a borrowing account. A chequing
+    # account has neither, so an APR typed into the upload form against one is
+    # a mistake rather than data, and is dropped here.
+    #
+    # The guard lives in the adapter, not the endpoint, because this is the
+    # single point every path goes through -- /api/upload, /api/upload-batch,
+    # and any direct call. Putting it in a route would leave the next caller
+    # to remember it.
+    account_type = normalize_account_type(parser_json.get("account_type"))
+    if account_type != "credit" and (apr is not None or credit_limit is not None):
+        logger.warning(
+            "Ignoring apr=%s / credit_limit=%s on %s account %s: only a credit "
+            "account can carry them", apr, credit_limit, account_type, account_id)
+        apr = credit_limit = None
+
     account = {
         "id": account_id,
         "bank_name": parser_json.get("bank_name"),
         "account_holder_name": parser_json.get("account_holder_name"),
         "account_last4": acct_last4,
-        "account_type": normalize_account_type(parser_json.get("account_type")),
+        "account_type": account_type,
         "currency": parser_json.get("currency") or DEFAULT_CURRENCY,
         "opening_balance": _to_float(parser_json.get("opening_balance")),
         "closing_balance": _to_float(parser_json.get("closing_balance")),
@@ -270,6 +330,9 @@ def adapt(parser_json: dict, apr: float | None = None,
     # signed `amount` would only carry the net.
     gross_deposits = 0.0
     gross_withdrawals = 0.0
+    recovered_dates = 0
+    dated_from_period = 0
+    period_start_date = parse_date(parser_json.get("statement_period_start"))
 
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
@@ -278,6 +341,23 @@ def adapt(parser_json: dict, apr: float | None = None,
             continue
 
         txn_date = parse_date(row.get("date"))
+        if txn_date is None:
+            txn_date = recover_date_from_description(
+                row.get("description"),
+                parser_json.get("statement_period_start"),
+                parser_json.get("statement_period_end"),
+            )
+            if txn_date is not None:
+                recovered_dates += 1
+        if txn_date is None and period_start_date is not None:
+            # TEMPORARY, pending a parser fix. Keeping the row with a
+            # fabricated date beats dropping it, but the date IS fabricated:
+            # every such row lands on the same day, so spending_over_time
+            # collapses into one bucket and anything date-ordered is fiction.
+            # Recurring detection is unaffected only by luck -- identical
+            # dates give zero-length gaps, which match_cadence rejects.
+            txn_date = period_start_date
+            dated_from_period += 1
         if txn_date is None:
             logger.warning("Skipping row %d: unparseable date %r", index, row.get("date"))
             continue
@@ -290,8 +370,20 @@ def adapt(parser_json: dict, apr: float | None = None,
         description = row.get("description")
         description = description if isinstance(description, str) else ""
 
-        if amount == 0 and not description.strip():
-            logger.warning("Skipping row %d: no amount and no description", index)
+        # A row that moves no money contributes nothing to any sum, category
+        # or average -- it only pads transaction_count and the transaction
+        # list. On OCR output it is usually not a transaction at all: section
+        # headings like "Banking/Debit Card Withdrawals and Purchases" get
+        # picked up as rows with no amount attached.
+        #
+        # CLAUDE.md skips these only when the description is ALSO empty. That
+        # is too narrow for real extractor output, where the junk rows carry
+        # plenty of text. If a bank ever prints a genuine $0.00 line (a waived
+        # fee, a declined authorization), dropping it loses no money -- it
+        # contributes zero to every figure by definition.
+        if amount == 0:
+            logger.warning("Skipping row %d: zero amount (%r)",
+                           index, description[:60] or "<no description>")
             continue
 
         gross_deposits += deposit
@@ -325,6 +417,21 @@ def adapt(parser_json: dict, apr: float | None = None,
                     account_id, account["total_deposits"], account["total_withdrawals"])
     else:
         account["totals_source"] = TOTALS_STATEMENT
+
+    if dated_from_period:
+        logger.warning(
+            "TEMPORARY FALLBACK: %d row(s) on %s had no date anywhere and were "
+            "stamped with the statement start date %s. Those rows are in the "
+            "right statement but the WRONG DAY -- spending_over_time and any "
+            "date ordering are unreliable for them. Remove this once the "
+            "parser populates date.",
+            dated_from_period, account_id, period_start_date)
+
+    if recovered_dates:
+        logger.warning(
+            "Recovered %d date(s) from the description on %s; the parser left "
+            "date null and kept the date inside the description text",
+            recovered_dates, account_id)
 
     logger.info("Adapted %d/%d rows for account %s", len(transactions), len(rows), account_id)
     return account, transactions

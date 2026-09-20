@@ -9,6 +9,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
   const [file, setFile] = useState(null);
   const [accountType, setAccountType] = useState(ACCOUNT_TYPES[0]);
   const [nickname, setNickname] = useState('');
+  const [apr, setApr] = useState('');
   const [dragActive, setDragActive] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | uploading | error
   const [error, setError] = useState(null);
@@ -57,7 +58,11 @@ export default function UploadZone({ open, onClose, onUploaded }) {
     setStatus('uploading');
     setError(null);
     try {
-      const data = await uploadStatement(file, { accountType, nickname });
+      const isCredit = accountType === 'Credit Card';
+      const data = await uploadStatement(file, {
+        nickname,
+        apr: isCredit ? apr : '',
+      });
       onUploaded?.(data);
       handleClose();
     } catch (err) {
@@ -152,6 +157,29 @@ export default function UploadZone({ open, onClose, onUploaded }) {
             />
           </div>
         </div>
+
+        {accountType === 'Credit Card' && (
+          <div className="mt-3">
+            <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="apr">
+              APR (%)
+            </label>
+            <input
+              id="apr"
+              type="number"
+              step="0.01"
+              min="0"
+              max="100"
+              inputMode="decimal"
+              placeholder="e.g. 24.99"
+              value={apr}
+              onChange={(e) => setApr(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Printed on your statement. Without it there is no payoff chart.
+            </p>
+          </div>
+        )}
 
         {error && (
           <div className="mt-3 flex items-start gap-2 rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
