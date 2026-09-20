@@ -291,6 +291,15 @@ def classify_natures(pairs: list[tuple[str, str | None]], *,
 
 MIN_OCCURRENCES = 3
 CADENCES = (7, 14, 30, 90, 365)
+
+# Real occurrences per year for each cadence, on the calendar (12 monthly
+# bills a year, not 365/30 = 12.17 of them -- a "monthly" charge is billed
+# once a calendar month, it doesn't creep by 0.17 payments/year just because
+# months aren't exactly 30 days). Every cadence above 7 was overstating
+# annual_cost to some degree; 30 (monthly) is both the most common bucket
+# and the largest relative error, which is what made it visible.
+PAYMENTS_PER_YEAR = {7: 52, 14: 26, 30: 12, 90: 4, 365: 1}
+
 CADENCE_TOLERANCE = 0.15      # a gap may sit within +-15% of its cadence
 GAP_REGULARITY_MAX = 0.25     # pstdev/median of per-period gaps
 AMOUNT_REGULARITY_MAX = 0.15  # below this a subscription is "fixed"
@@ -450,7 +459,16 @@ def find_recurring(txns: list[dict], *, allow_network: bool | None = None) -> li
             # names. They agree unless a payment was skipped, and then the
             # raw median is inflated -- the Gym case would predict the next
             # charge 45 days out instead of 30.
-            "annual_cost": round(median_amount * (365 / cadence_days), 2),
+            #
+            # PAYMENTS_PER_YEAR.get(...) rather than a bare lookup: cadence_days
+            # is always one of CADENCES today, but a KeyError here would crash
+            # the whole upload if that ever stopped being true, which breaks
+            # this codebase's "never blocks the pipeline" rule everywhere else
+            # (categorize.py, triq.py, query.py). 365/cadence_days is the old
+            # (slightly-off) formula, kept only as a degrade path.
+            "annual_cost": round(
+                median_amount * PAYMENTS_PER_YEAR.get(cadence_days, 365 / cadence_days), 2
+            ),
             "price_change_pct": change_pct,
             "first_seen": dates[0].isoformat(),
             "next_expected": (dates[-1] + timedelta(days=cadence_days)).isoformat(),
