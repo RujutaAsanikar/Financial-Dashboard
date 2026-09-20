@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { CloudUpload, X, FileSpreadsheet, TriangleAlert, LoaderCircle } from 'lucide-react';
-import { uploadStatement } from '../api';
+import { uploadStatement, uploadStatements } from '../api';
 import { cn } from '../lib/utils';
 
 const ACCOUNT_TYPES = ['Checking', 'Savings', 'Credit Card'];
 
 export default function UploadZone({ open, onClose, onUploaded }) {
-  const [file, setFile] = useState(null);
+  const [files, setFiles] = useState([]);
   const [accountType, setAccountType] = useState(ACCOUNT_TYPES[0]);
   const [nickname, setNickname] = useState('');
   const [apr, setApr] = useState('');
@@ -25,7 +25,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
   if (!open) return null;
 
   const reset = () => {
-    setFile(null);
+    setFiles([]);
     setStatus('idle');
     setError(null);
     setDragActive(false);
@@ -36,33 +36,35 @@ export default function UploadZone({ open, onClose, onUploaded }) {
     onClose();
   };
 
-  const pickFile = (f) => {
-    if (!f) return;
-    if (!/\.json$/i.test(f.name)) {
-      setError('Please upload a .json file from the parser.');
-      setFile(null);
+  const pickFiles = (fileList) => {
+    const picked = Array.from(fileList || []);
+    if (!picked.length) return;
+    const bad = picked.find((f) => !/\.json$/i.test(f.name));
+    if (bad) {
+      setError(`${bad.name} isn't a .json file from the parser — every file in the batch must be.`);
+      setFiles([]);
       return;
     }
     setError(null);
-    setFile(f);
+    setFiles(picked);
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
-    pickFile(e.dataTransfer.files?.[0]);
+    pickFiles(e.dataTransfer.files);
   };
 
   const submit = async () => {
-    if (!file) return;
+    if (!files.length) return;
     setStatus('uploading');
     setError(null);
     try {
       const isCredit = accountType === 'Credit Card';
-      const data = await uploadStatement(file, {
-        nickname,
-        apr: isCredit ? apr : '',
-      });
+      const data =
+        files.length === 1
+          ? await uploadStatement(files[0], { nickname, apr: isCredit ? apr : '' })
+          : await uploadStatements(files, { apr: isCredit ? apr : '' });
       onUploaded?.(data);
       handleClose();
     } catch (err) {
@@ -79,7 +81,10 @@ export default function UploadZone({ open, onClose, onUploaded }) {
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold">Upload statement</h2>
-            <p className="text-xs text-muted-foreground">The parser's JSON output for your statement. We never send this anywhere but our own backend.</p>
+            <p className="text-xs text-muted-foreground">
+              The parser's JSON output for your statement(s). Select checking and credit together for
+              accurate transfer detection right away. We never send this anywhere but our own backend.
+            </p>
           </div>
           <button
             type="button"
@@ -107,19 +112,26 @@ export default function UploadZone({ open, onClose, onUploaded }) {
             ref={inputRef}
             type="file"
             accept=".json"
+            multiple
             className="sr-only"
-            onChange={(e) => pickFile(e.target.files?.[0])}
+            onChange={(e) => pickFiles(e.target.files)}
           />
-          {file ? (
+          {files.length ? (
             <>
               <FileSpreadsheet className="size-6 text-primary" />
-              <span className="text-sm font-medium">{file.name}</span>
-              <span className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB · click to replace</span>
+              <div className="flex flex-col items-center gap-0.5">
+                {files.map((f) => (
+                  <span key={f.name} className="text-sm font-medium">
+                    {f.name} <span className="text-xs text-muted-foreground">({(f.size / 1024).toFixed(0)} KB)</span>
+                  </span>
+                ))}
+              </div>
+              <span className="text-xs text-muted-foreground">click to replace</span>
             </>
           ) : (
             <>
               <CloudUpload className="size-6 text-muted-foreground" />
-              <span className="text-sm font-medium">Drop your statement JSON here or click to browse</span>
+              <span className="text-sm font-medium">Drop one or more statement JSON files here or click to browse</span>
               <span className="text-xs text-muted-foreground">.json only</span>
             </>
           )}
@@ -128,7 +140,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="account-type">
-              Account type
+              {files.length > 1 ? 'Includes a credit card?' : 'Account type'}
             </label>
             <select
               id="account-type"
@@ -143,19 +155,21 @@ export default function UploadZone({ open, onClose, onUploaded }) {
               ))}
             </select>
           </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="nickname">
-              Nickname
-            </label>
-            <input
-              id="nickname"
-              type="text"
-              placeholder="e.g. Everyday checking"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+          {files.length <= 1 && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="nickname">
+                Nickname
+              </label>
+              <input
+                id="nickname"
+                type="text"
+                placeholder="e.g. Everyday checking"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          )}
         </div>
 
         {accountType === 'Credit Card' && (
@@ -176,7 +190,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Printed on your statement. Without it there is no payoff chart.
+              Printed on your statement. Applied to whichever file is actually the credit account —
+              without it there is no payoff chart.
             </p>
           </div>
         )}
@@ -191,7 +206,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
         <button
           type="button"
           onClick={submit}
-          disabled={!file || status === 'uploading'}
+          disabled={!files.length || status === 'uploading'}
           className="mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-transform hover:brightness-110 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           {status === 'uploading' ? (
@@ -199,6 +214,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
               <LoaderCircle className="size-4 animate-spin" />
               Processing…
             </>
+          ) : files.length > 1 ? (
+            `Upload ${files.length} statements and analyze`
           ) : (
             'Upload and analyze'
           )}
