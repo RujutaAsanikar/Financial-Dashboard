@@ -4,11 +4,13 @@ import { askQuestion } from './api';
 import Card from './components/Card';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from './components/ui/table';
 
+// Must match the backend's SUGGESTED_QUESTIONS (query.py) exactly — these
+// are the wording the backend team pre-verified with the model.
 const EXAMPLES = [
   'How much did I spend on food last month?',
-  "What's my biggest recurring charge?",
+  'What is my biggest recurring charge?',
   'How much do I spend on weekends?',
-  'Compare August to July.',
+  'Compare August to July spending.',
 ];
 
 export default function AskBox() {
