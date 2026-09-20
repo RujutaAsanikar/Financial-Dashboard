@@ -1,0 +1,151 @@
+{
+  "bank_name": "FIRST BANK OF WIKI",
+  "account_holder_name": "John Jones",
+  "account_number": "00005-123-456-7",
+  "account_type": "Chequing",
+  "statement_period_start": "2003-10-09",
+  "statement_period_end": "2003-11-08",
+  "currency": null,
+  "opening_balance": 0.55,
+  "closing_balance": -72.47,
+  "transactions": [
+    {
+      "date": "2003-10-14",
+      "description": "Payroll Deposit - HOTEL",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 694.81,
+      "balance": 695.36
+    },
+    {
+      "date": "2003-10-14",
+      "description": "Web Bill Payment - MASTERCARD",
+      "reference": "9685",
+      "withdrawal": 200.0,
+      "deposit": null,
+      "balance": 495.36
+    },
+    {
+      "date": "2003-10-16",
+      "description": "ATM Withdrawal - INTERAC",
+      "reference": "3990",
+      "withdrawal": 21.25,
+      "deposit": null,
+      "balance": 474.11
+    },
+    {
+      "date": "2003-10-16",
+      "description": "Fees - Interac",
+      "reference": null,
+      "withdrawal": 1.5,
+      "deposit": null,
+      "balance": 472.61
+    },
+    {
+      "date": "2003-10-20",
+      "description": "Interac Purchase - ELECTRONICS",
+      "reference": "1975",
+      "withdrawal": 2.99,
+      "deposit": null,
+      "balance": 469.62
+    },
+    {
+      "date": "2003-10-21",
+      "description": "Web Bill Payment - AMEX",
+      "reference": "3314",
+      "withdrawal": 300.0,
+      "deposit": null,
+      "balance": 169.62
+    },
+    {
+      "date": "2003-10-22",
+      "description": "ATM Withdrawal - FIRST BANK",
+      "reference": "0064",
+      "withdrawal": 100.0,
+      "deposit": null,
+      "balance": 69.62
+    },
+    {
+      "date": "2003-10-23",
+      "description": "Interac Purchase - SUPERMARKET",
+      "reference": "1559",
+      "withdrawal": 29.08,
+      "deposit": null,
+      "balance": 40.54
+    },
+    {
+      "date": "2003-10-24",
+      "description": "Interac Refund - ELECTRONICS",
+      "reference": "1975",
+      "withdrawal": null,
+      "deposit": 2.99,
+      "balance": 43.53
+    },
+    {
+      "date": "2003-10-27",
+      "description": "Telephone Bill Payment - VISA",
+      "reference": "2475",
+      "withdrawal": 6.77,
+      "deposit": null,
+      "balance": 36.76
+    },
+    {
+      "date": "2003-10-28",
+      "description": "Payroll Deposit - HOTEL",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 694.81,
+      "balance": 731.57
+    },
+    {
+      "date": "2003-10-30",
+      "description": "VVeb Funds Transfer - From SAVINGS",
+      "reference": "2620",
+      "withdrawal": null,
+      "deposit": 50.0,
+      "balance": 781.57
+    },
+    {
+      "date": "2003-11-03",
+      "description": "Pre-Auth. Payment - INSURANCE",
+      "reference": null,
+      "withdrawal": 33.55,
+      "deposit": null,
+      "balance": 748.02
+    },
+    {
+      "date": "2003-11-03",
+      "description": "Cheque No. - 409",
+      "reference": null,
+      "withdrawal": 100.0,
+      "deposit": null,
+      "balance": 648.02
+    },
+    {
+      "date": "2003-11-06",
+      "description": "Mortgage Payment",
+      "reference": null,
+      "withdrawal": 710.49,
+      "deposit": null,
+      "balance": -62.47
+    },
+    {
+      "date": "2003-11-07",
+      "description": "Fees - Overdraft",
+      "reference": null,
+      "withdrawal": 5.0,
+      "deposit": null,
+      "balance": -67.47
+    },
+    {
+      "date": "2003-11-08",
+      "description": "Fees - Monthly",
+      "reference": null,
+      "withdrawal": 5.0,
+      "deposit": null,
+      "balance": -72.47
+    }
+  ],
+  "total_withdrawals": 1515.63,
+  "total_deposits": 1442.61
+}

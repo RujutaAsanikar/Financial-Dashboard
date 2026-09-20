@@ -46,6 +46,7 @@ TOP_LEVEL_FIELDS = [
     "transactions",
     "total_withdrawals",
     "total_deposits",
+    "apr",
 ]
 
 TRANSACTION_FIELDS = ["date", "description", "reference", "withdrawal", "deposit", "balance"]
@@ -70,6 +71,7 @@ TOP_LEVEL_ALIASES = {
     "closing_balance": ["closing_balance", "ending_balance", "new_balance", "final_balance", "end_balance"],
     "total_withdrawals": ["total_withdrawals", "total_debits", "withdrawals_total", "total_paid_out", "total_withdrawal"],
     "total_deposits": ["total_deposits", "total_credits", "deposits_total", "total_paid_in", "total_deposit"],
+    "apr": ["apr", "annual_percentage_rate", "interest_rate"],
 }
 
 TRANSACTION_ALIASES = {
