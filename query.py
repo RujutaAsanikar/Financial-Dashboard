@@ -96,8 +96,54 @@ SUGGESTED_QUESTIONS = [
 ]
 
 
-def build_sql_prompt(question: str, schema_ddl: str, categories: str, today) -> str:
+MERCHANT_LIST_CAP = 150
+
+
+def data_inventory() -> str:
+    """The actual values of the columns a question is most likely to filter on.
+
+    The prompt has always listed the exact `category` values, so category
+    questions work. It said nothing about `bank_name` or `merchant`, so the
+    model had to guess them -- and guessed wrong: asked to compare two banks
+    it wrote IN ('Finance Bank', 'Wiki Bank') against stored values of
+    'FINANCE BANK' and 'FIRST BANK OF WIKI'. Equality is exact, so the query
+    returned nothing and the user got "no transactions" for a question the
+    data could answer.
+
+    Accounts are always few. Merchants are capped -- past the cap the list
+    stops being worth the tokens, and the ILIKE rule in the prompt covers it.
+    Never raises: a missing or empty database just yields no inventory.
+    """
+    try:
+        with db.get_con(read_only=True) as con:
+            accounts = con.execute(
+                "SELECT bank_name, account_type, account_last4 FROM accounts "
+                "ORDER BY bank_name"
+            ).fetchall()
+            merchants = con.execute(
+                "SELECT DISTINCT merchant FROM transactions "
+                "WHERE merchant IS NOT NULL ORDER BY merchant"
+            ).fetchall()
+    except Exception as exc:                      # pragma: no cover - defensive
+        logger.warning("Could not read the data inventory: %s", exc)
+        return ""
+
+    lines = []
+    if accounts:
+        lines.append("The ONLY accounts that exist (bank_name is stored exactly "
+                     "as written here):")
+        for bank, kind, last4 in accounts:
+            lines.append(f"  - {bank!r}  type={kind}  last4={last4}")
+    if merchants and len(merchants) <= MERCHANT_LIST_CAP:
+        names = ", ".join(repr(m[0]) for m in merchants)
+        lines.append(f"\nThe ONLY merchants that exist: {names}")
+    return "\n".join(lines)
+
+
+def build_sql_prompt(question: str, schema_ddl: str, categories: str, today,
+                     inventory: str = "") -> str:
     """The system prompt. Kept a pure function so it can be tested offline."""
+    inventory_block = f"\n{inventory}\n" if inventory else ""
     return f"""\
 You translate a question about personal bank transactions into ONE DuckDB
 SELECT statement. You never see the data and you never compute a figure --
@@ -108,7 +154,7 @@ Schema:
 
 The only values `category` ever takes:
 {categories}
-
+{inventory_block}
 Today is {today}.
 
 Rules:
@@ -126,6 +172,15 @@ Rules:
 - Use ONLY the tables and columns listed above. If answering would need a
   column that is not in the schema, that is a refusal, not a reason to
   substitute a different column.
+- NEVER invent a value for `bank_name`, `merchant` or `account_type`. Copy it
+  character-for-character from the inventory above. `=` and `IN` are exact,
+  so a guessed spelling silently returns zero rows and the user is told there
+  are no such transactions -- a wrong answer that looks like a fact.
+- When filtering on `bank_name` or `merchant`, use ILIKE with wildcards
+  (`merchant ILIKE '%netflix%'`) rather than `=`, so capitalisation and
+  trailing words cannot cause a false empty result.
+- If the question names an account or merchant that is NOT in the inventory,
+  refuse and say it is not in the data. Do not fall back to a similar one.
 
 WHEN TO REFUSE
 The ONLY thing you may produce is a query that reads the two tables above. A
@@ -236,7 +291,8 @@ def _generate_sql(question: str, error: str | None = None) -> tuple[str, str | N
         sql: str
         refusal: str | None = None
 
-    prompt = build_sql_prompt(question, SCHEMA_DDL, CATEGORIES, date.today().isoformat())
+    prompt = build_sql_prompt(question, SCHEMA_DDL, CATEGORIES,
+                              date.today().isoformat(), data_inventory())
     if error:
         prompt += f"\n\nYour previous query failed with: {error}\nReturn corrected SQL."
 

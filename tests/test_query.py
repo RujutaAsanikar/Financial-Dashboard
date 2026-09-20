@@ -104,6 +104,54 @@ def test_the_prompt_states_the_refusal_contract():
     assert "never approximate" in prompt.lower()
 
 
+def test_the_inventory_lists_real_column_values():
+    """Asked to compare two banks, the model wrote IN ('Finance Bank', 'Wiki
+    Bank') against stored 'FINANCE BANK' / 'FIRST BANK OF WIKI'. Equality is
+    exact, so it returned nothing and the user was told there were no such
+    transactions -- a wrong answer that reads as a fact."""
+    with db.get_con() as con:
+        con.execute("INSERT INTO accounts (id, bank_name, account_type, "
+                    "account_last4) VALUES ('a', 'FINANCE BANK', 'checking', '8765')")
+        con.execute("INSERT INTO transactions (id, account_id, merchant, amount) "
+                    "VALUES ('t', 'a', 'Giant Eagle', -12.0)")
+
+    inventory = query.data_inventory()
+    assert "'FINANCE BANK'" in inventory
+    assert "8765" in inventory
+    assert "'Giant Eagle'" in inventory
+
+    prompt = query.build_sql_prompt("q", query.SCHEMA_DDL, query.CATEGORIES,
+                                    "2026-09-20", inventory)
+    assert "'FINANCE BANK'" in prompt
+    assert "ILIKE" in prompt
+    assert "NEVER invent a value" in prompt
+
+
+def test_the_inventory_survives_an_empty_database():
+    assert query.data_inventory() == ""
+
+
+def test_the_prompt_is_unchanged_when_there_is_no_inventory():
+    """An empty inventory must not leave a dangling header in the prompt."""
+    prompt = query.build_sql_prompt("q", query.SCHEMA_DDL, query.CATEGORIES,
+                                    "2026-09-20", "")
+    assert "ONLY accounts that exist" not in prompt
+    assert "Today is 2026-09-20." in prompt
+
+
+def test_a_huge_merchant_list_is_omitted():
+    """Past the cap the list stops paying for its tokens; ILIKE covers it."""
+    with db.get_con() as con:
+        con.execute("INSERT INTO accounts (id, bank_name) VALUES ('a', 'BANK')")
+        con.executemany(
+            "INSERT INTO transactions (id, account_id, merchant) VALUES (?, 'a', ?)",
+            [(str(i), f"Merchant {i}") for i in range(query.MERCHANT_LIST_CAP + 1)],
+        )
+    inventory = query.data_inventory()
+    assert "'BANK'" in inventory              # accounts are always listed
+    assert "ONLY merchants" not in inventory  # merchants are not
+
+
 def test_four_suggested_questions():
     assert len(query.SUGGESTED_QUESTIONS) == 4
 
