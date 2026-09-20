@@ -184,6 +184,24 @@ def validate_sql(sql: str) -> str:
     return cleaned
 
 
+def tidy_floats(rows: list[dict]) -> list[dict]:
+    """Round float columns to cents.
+
+    SUM() over doubles accumulates binary residue: summing this schema's
+    grocery rows yields 690.3100000000001. The summarizer is told to quote
+    figures EXACTLY -- which is what keeps it from inventing them -- so it
+    faithfully prints the residue and the user reads it as a real figure.
+    Round once, here, and both the answer and the rows table are clean.
+
+    Every float this schema holds is money, an APR, or a 0-1 confidence, so
+    2dp is lossless for all of them. Ints, dates and strings are untouched.
+    """
+    return [
+        {k: (round(v, 2) if isinstance(v, float) else v) for k, v in row.items()}
+        for row in rows
+    ]
+
+
 def run_safe_query(sql: str) -> list[dict]:
     """Validate, wrap, and execute on a read-only connection."""
     cleaned = validate_sql(sql)
@@ -198,7 +216,7 @@ def run_safe_query(sql: str) -> list[dict]:
         try:
             cursor = con.execute(wrapped)
             columns = [d[0] for d in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+            return tidy_floats(dict(zip(columns, row)) for row in cursor.fetchall())
         finally:
             timer.cancel()
 

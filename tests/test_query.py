@@ -108,6 +108,29 @@ def test_four_suggested_questions():
     assert len(query.SUGGESTED_QUESTIONS) == 4
 
 
+# --- float residue never reaches the user ---------------------------------
+
+def test_float_residue_is_rounded_to_cents():
+    """SUM() over doubles produces 690.3100000000001, and the summarizer is
+    told to quote figures exactly -- so it prints the residue verbatim."""
+    assert query.tidy_floats([{"total": 690.3100000000001}]) == [{"total": 690.31}]
+
+
+def test_tidy_floats_leaves_other_types_alone():
+    rows = query.tidy_floats([
+        {"n": 7, "merchant": "Netflix", "when": None, "amount": -6.25},
+    ])
+    assert rows == [{"n": 7, "merchant": "Netflix", "when": None, "amount": -6.25}]
+
+
+def test_a_real_query_comes_back_rounded():
+    with db.get_con() as con:
+        con.execute("INSERT INTO transactions (id, account_id, amount) VALUES "
+                    "('a', 'x', -690.30), ('b', 'x', -0.01)")
+    rows = query.run_safe_query("SELECT SUM(amount) AS total FROM transactions")
+    assert rows == [{"total": -690.31}]
+
+
 # --- an empty result is never narrated into a figure -----------------------
 
 def test_no_rows_is_an_empty_result():
