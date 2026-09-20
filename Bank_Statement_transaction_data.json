@@ -1,0 +1,88 @@
+{
+  "transactions": [
+    {
+      "date": null,
+      "description": "06/01 Rent Bill",
+      "reference": null,
+      "withdrawal": 670.0,
+      "deposit": null,
+      "balance": 33902.23
+    },
+    {
+      "date": null,
+      "description": "06/08 Electric Bill",
+      "reference": null,
+      "withdrawal": 347.85,
+      "deposit": null,
+      "balance": 34294.38
+    },
+    {
+      "date": null,
+      "description": "06/13 Phone Bill",
+      "reference": null,
+      "withdrawal": 75.45,
+      "deposit": null,
+      "balance": 34218.93
+    },
+    {
+      "date": null,
+      "description": "06/15 Deposit",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 7245.0,
+      "balance": 41463.93
+    },
+    {
+      "date": null,
+      "description": "06/24 Deposit",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 3255.0,
+      "balance": 44378.97
+    },
+    {
+      "date": null,
+      "description": "06/25 Internet Bill",
+      "reference": null,
+      "withdrawal": 88.88,
+      "deposit": null,
+      "balance": 44290.09
+    },
+    {
+      "date": null,
+      "description": "06/29 Payroll Run OGIe0 ST ASO-A6",
+      "reference": null,
+      "withdrawal": 6493.65,
+      "deposit": null,
+      "balance": 38731.44
+    },
+    {
+      "date": null,
+      "description": "06/30 Interest Earned",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 18.75,
+      "balance": 37515.21
+    },
+    {
+      "date": null,
+      "description": "06/30 Withholding Tax AALEINANCE",
+      "reference": null,
+      "withdrawal": 3.75,
+      "deposit": null,
+      "balance": 37511.46
+    }
+  ],
+  "opening_balance": 34572.23,
+  "closing_balance": 37511.46,
+  "total_withdrawals": null,
+  "total_deposits": null,
+  "low_confidence_rows": [],
+  "bank_name": "FINANCE BANK",
+  "account_number": "0000000098765",
+  "account_type": "Checking",
+  "statement_period_start": "2022-06-01",
+  "statement_period_end": "2022-06-30",
+  "_source_file": "Bank_Statement.webp",
+  "_method": "local: pdfplumber/tesseract + geometric column detection"
+}

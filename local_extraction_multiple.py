@@ -247,9 +247,22 @@ def configure_tesseract(pytesseract, lang: str, quiet: bool = False) -> None:
 
 
 def tessdata_config_flag() -> str:
-    """The --tessdata-dir argument for the Tesseract command line, if known."""
+    """
+    The --tessdata-dir argument for the Tesseract command line, when it is safe
+    to pass one.
+
+    pytesseract splits the config string with shlex.split(config, posix=False)
+    on Windows, and in non-POSIX mode shlex keeps the quote characters instead
+    of consuming them. A quoted path therefore reaches Tesseract as
+    '"C:\\path\\tessdata"' and fails to open, while an unquoted path containing
+    a space gets split into two arguments. So the flag is only added for
+    whitespace-free paths; TESSDATA_PREFIX, set alongside it, is the mechanism
+    that covers everything else.
+    """
     prefix = os.environ.get("TESSDATA_PREFIX")
-    return f' --tessdata-dir "{prefix}"' if prefix else ""
+    if not prefix or any(ch.isspace() for ch in prefix):
+        return ""
+    return f" --tessdata-dir {prefix}"
 
 
 # ============================================
@@ -314,18 +327,23 @@ def words_from_image(image, lang: str, psm: int) -> tuple[list[Word], float]:
             Image.LANCZOS,
         )
 
-    try:
-        data = pytesseract.image_to_data(
+    def attempt(config_extra: str):
+        return pytesseract.image_to_data(
             prepared,
             lang=lang,
-            config=f"--psm {psm}{tessdata_config_flag()}",
+            config=f"--psm {psm}{config_extra}",
             output_type=pytesseract.Output.DICT,
         )
+
+    try:
+        data = attempt(tessdata_config_flag())
     except Exception as exc:
         message = str(exc)
-        if "tesseract" in message.lower() and ("not installed" in message.lower()
-                                               or "not in your path" in message.lower()
-                                               or "cannot find" in message.lower()):
+        lowered = message.lower()
+
+        if "tesseract" in lowered and ("not installed" in lowered
+                                       or "not in your path" in lowered
+                                       or "cannot find" in lowered):
             searched = "\n".join(f"  {d}" for d in candidate_tesseract_dirs())
             raise SystemExit(
                 f"Could not run Tesseract: {exc}\n\n"
@@ -334,14 +352,43 @@ def words_from_image(image, lang: str, psm: int) -> tuple[list[Word], float]:
                 "Point at it explicitly with:\n"
                 r'  python local_extraction.py statement.png --tesseract-dir C:\Financial-Dashboard\tesseract'
             )
-        if "failed loading language" in message.lower() or "tessdata" in message.lower():
+
+        if "failed loading language" in lowered or "tessdata" in lowered:
+            # Retry with the other TESSDATA_PREFIX convention. Tesseract 4 and 5
+            # want the tessdata folder itself; 3.x wanted its parent, and some
+            # portable builds follow the old rule.
+            prefix = os.environ.get("TESSDATA_PREFIX")
+            if prefix and Path(prefix).name.lower() == "tessdata":
+                parent = str(Path(prefix).parent)
+                os.environ["TESSDATA_PREFIX"] = parent
+                try:
+                    data = attempt(tessdata_config_flag())
+                except Exception:
+                    os.environ["TESSDATA_PREFIX"] = prefix  # restore for the message
+                else:
+                    return finish_ocr(data, prepared)
+
+            prefix = os.environ.get("TESSDATA_PREFIX")
+            hint = ""
+            if prefix:
+                folder = Path(prefix)
+                present = sorted(p.name for p in folder.glob("*.traineddata")) if folder.is_dir() else []
+                hint = (
+                    f"\n{folder} {'exists' if folder.is_dir() else 'does NOT exist'}"
+                    f"{', containing: ' + ', '.join(present) if present else ''}"
+                )
             raise SystemExit(
                 f"Tesseract could not load its language data: {exc}\n"
-                f"TESSDATA_PREFIX is {os.environ.get('TESSDATA_PREFIX') or 'unset'}.\n"
+                f"TESSDATA_PREFIX is {prefix or 'unset'}.{hint}\n"
                 f"Make sure {lang}.traineddata sits in that folder."
             )
         raise
 
+    return finish_ocr(data, prepared)
+
+
+def finish_ocr(data: dict, prepared) -> tuple[list[Word], float]:
+    """Turn Tesseract's word table into Word objects."""
     words = []
     for i, text in enumerate(data["text"]):
         text = (text or "").strip()
