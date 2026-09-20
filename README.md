@@ -243,20 +243,6 @@ clean.
 
 ---
 
-## Limitations
-
-- **Categorization** is dictionary-first with a model fallback. Merchants
-  outside the dictionary land in "Other" until it's rebuilt.
-- **Reconciliation flags, it does not correct.** A failing check tells you which
-  rows to look at; it never edits a figure.
-- **Transfer detection uses a 3-day window** and may miss delayed postings. A
-  transfer whose other side you never uploaded can't be paired at all.
-- **Payoff assumes a fixed payment and no new charges** — a projection, not a
-  prediction, and not financial advice.
-- **Recurring detection needs 3+ occurrences** at a recognised cadence
-  (weekly, biweekly, monthly, quarterly, annual). A single statement usually
-  isn't enough history; three months is.
-
 ---
 
 ## When it doesn't work
