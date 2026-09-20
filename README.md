@@ -238,29 +238,9 @@ query.py         text-to-SQL and the guards around it
 fixtures/demo/   3-month chequing + credit statements to try it with
 ```
 
-The database is a single file, `finance.duckdb`, gitignored. Delete it to start
-clean.
+The database is a single file, `finance.duckdb`, gitignored.
 
 ---
 
 ---
 
-## When it doesn't work
-
-**`ModuleNotFoundError: No module named 'fastapi'`** — you're on system Python.
-Use the full `.venv/bin/uvicorn` path.
-
-**`Address already in use`** — something's on 8000. Use `--port 8001` and set
-`VITE_API_BASE` to match.
-
-**Dashboard shows data I never uploaded** — you're in mock mode. See
-`frontend/.env.local` above.
-
-**Upload fails on a PDF** — no `ANTHROPIC_API_KEY`. Upload the parser's `.json`
-instead, or add the key.
-
-**Subscriptions panel is empty** — not enough history. Recurring detection needs
-3+ occurrences; try the 3-month statements in `fixtures/demo/`.
-
-**Blank page at `/docs`** — Swagger loads from a CDN and needs internet. The API
-itself works offline.
