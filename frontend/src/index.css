@@ -1,0 +1,171 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #F8F8FC;
+  --foreground: #16161D;
+  --card: #FFFFFF;
+  --card-foreground: #16161D;
+  --popover: #FFFFFF;
+  --popover-foreground: #16161D;
+  --primary: #4F46E5;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EEF0FC;
+  --secondary-foreground: #3730A3;
+  --muted: #F1F1F6;
+  --muted-foreground: #6B7280;
+  --accent: #EEF0FC;
+  --accent-foreground: #3730A3;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --success: #047857;
+  --success-foreground: #FFFFFF;
+  --border: #E7E7F0;
+  --input: #E7E7F0;
+  --ring: #4F46E5;
+  --radius: 1rem;
+  --chart-1: #4F46E5;
+  --chart-2: #8B5CF6;
+  --chart-3: #06B6D4;
+  --chart-4: #F59E0B;
+  --chart-5: #F43F5E;
+  --sidebar: #FFFFFF;
+  --sidebar-foreground: #16161D;
+}
+
+.dark {
+  --background: #0A0A0F;
+  --foreground: #F4F4F8;
+  --card: #131319;
+  --card-foreground: #F4F4F8;
+  --popover: #131319;
+  --popover-foreground: #F4F4F8;
+  --primary: #818CF8;
+  --primary-foreground: #0A0A0F;
+  --secondary: #1B1B2C;
+  --secondary-foreground: #C7C9FF;
+  --muted: #1C1C25;
+  --muted-foreground: #9498A8;
+  --accent: #1B1B2C;
+  --accent-foreground: #C7C9FF;
+  --destructive: #FB7185;
+  --destructive-foreground: #1A0505;
+  --success: #34D399;
+  --success-foreground: #052E1A;
+  --border: #232330;
+  --input: #232330;
+  --ring: #818CF8;
+  --chart-1: #818CF8;
+  --chart-2: #A78BFA;
+  --chart-3: #22D3EE;
+  --chart-4: #FBBF24;
+  --chart-5: #FB7185;
+  --sidebar: #0E0E15;
+  --sidebar-foreground: #F4F4F8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* thin, theme-aware scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+/* soft ambient glow behind the header — pure CSS, no assets */
+.mesh-glow {
+  background:
+    radial-gradient(600px circle at 15% -10%, color-mix(in oklch, var(--primary) 20%, transparent), transparent 60%),
+    radial-gradient(500px circle at 85% -20%, color-mix(in oklch, var(--chart-3) 16%, transparent), transparent 55%);
+}
+
+.glass {
+  background: color-mix(in oklch, var(--card) 72%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--muted) 25%, color-mix(in oklch, var(--muted) 60%, var(--border)) 50%, var(--muted) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in-up {
+  animation: fade-in-up 0.35s ease-out both;
+}
