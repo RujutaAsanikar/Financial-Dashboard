@@ -20,8 +20,10 @@ with invented SQL.
 """
 
 import logging
+import os
 import re
 import threading
+from pathlib import Path
 
 import sqlglot
 import sqlglot.expressions as exp
@@ -29,6 +31,33 @@ import sqlglot.expressions as exp
 import db
 
 logger = logging.getLogger(__name__)
+
+
+def _load_env() -> None:
+    """Read .env into the environment, if it exists.
+
+    The Anthropic client reads ANTHROPIC_API_KEY from the environment, so
+    `uvicorn main:app` started from a plain shell has no key and every
+    /api/ask degrades to "could not reach the model" -- a silent failure that
+    looks like a bug in this module. It lives here rather than in main.py so
+    the Q&A feature carries its own configuration.
+
+    Hand-rolled rather than adding python-dotenv, which is not in CLAUDE.md's
+    dependency list. Real environment variables always win, so CI and
+    deployment are unaffected.
+    """
+    env_file = Path(__file__).with_name(".env")
+    if not env_file.exists():
+        return
+    for line in env_file.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, _, value = line.partition("=")
+        os.environ.setdefault(name.strip(), value.strip().strip("'\""))
+
+
+_load_env()
 
 MODEL = "claude-opus-4-8"
 ROW_LIMIT = 500
@@ -94,12 +123,33 @@ Rules:
 - Return ONE SELECT statement. No semicolon, no markdown fence, no commentary,
   no CTE chains that end in anything but a SELECT.
 - Never write INSERT, UPDATE, DELETE, DROP, CREATE, ALTER or ATTACH.
+- Use ONLY the tables and columns listed above. If answering would need a
+  column that is not in the schema, that is a refusal, not a reason to
+  substitute a different column.
 
-If the question cannot be answered from this schema -- it asks for advice,
-for data the schema does not hold (merchant addresses, interest projections,
-anything about the future), or is not about these transactions at all -- set
-`refusal` to one short sentence saying what you cannot answer and leave `sql`
-empty. Do not invent a query that approximates the question.
+WHEN TO REFUSE
+The ONLY thing you may produce is a query that reads the two tables above. A
+question is answerable only if every figure it asks for can be computed by
+SQL from those columns. If it cannot, set `refusal` and leave `sql` empty.
+
+Refuse, specifically, when the question:
+- asks for advice, an opinion, a recommendation, a budget or a plan
+  ("should I", "can I afford", "how do I save")
+- asks about the future, or for a forecast, projection or estimate
+- needs anything the schema does not store: credit scores, account balances
+  over time, interest projections, merchant addresses or phone numbers,
+  budgets, goals, tax figures, anyone else's data
+- is about a period, account, merchant or category that the schema could
+  hold but you cannot verify -- write the query anyway and let it return
+  nothing; do NOT widen or substitute filters to make rows appear
+- is general knowledge, or is not about these bank transactions at all
+
+Your refusal sentence must begin with:
+"That isn't answerable from the statement data available."
+and may add one short clause naming what is missing.
+
+Never guess, never approximate, never answer from your own knowledge, and
+never write a query for a different question than the one asked.
 
 Question: {question}"""
 
@@ -182,19 +232,71 @@ def _generate_sql(question: str, error: str | None = None) -> tuple[str, str | N
     return out.sql or "", (out.refusal or None)
 
 
-def _summarize(question: str, rows: list[dict]) -> str:
-    """One sentence, from the RESULT ROWS ONLY. The model never sees the table."""
+NO_DATA = ("That isn't answerable from the statement data available -- the "
+           "query ran but matched no transactions.")
+
+SUMMARY_ROW_LIMIT = 50
+
+
+def is_empty_result(rows: list[dict]) -> bool:
+    """True when the query found nothing, including the aggregate-of-nothing case.
+
+    `SELECT SUM(amount) ... WHERE <matches nothing>` does not return zero rows.
+    It returns ONE row whose every value is NULL. Handed that, a summarizer
+    reads the shape as a real answer and reports "$0" -- which is a different
+    and worse claim than "no such transactions", because $0 sounds verified.
+    Treat an all-null result as no result.
+    """
+    if not rows:
+        return True
+    return all(value is None for row in rows for value in row.values())
+
+
+SUMMARY_SYSTEM = """\
+You put ONE short sentence around a SQL result. The query below was written to
+answer the question and has already run, so the rows ARE the answer -- report
+them, do not second-guess whether they are relevant.
+
+Hard rules:
+- Every figure in your sentence must appear verbatim in the rows. Copy the
+  digits exactly. Do not recompute, re-round, convert, total, average, or
+  derive anything the rows do not already state.
+- Add nothing from your own knowledge. You know nothing about this person
+  beyond these rows.
+- If the question asked about several things and the rows cover only some of
+  them, say exactly which are present and that the rest returned no data.
+  Never fill the gap with a plausible number.
+- A dollar amount may be written with a $ and its own digits unchanged.
+- No advice, no commentary, no follow-up suggestions."""
+
+
+def _summarize(question: str, rows: list[dict], sql: str = "") -> str:
+    """One sentence, from the RESULT ROWS ONLY. The model never sees the table.
+
+    The SQL goes in as context so the model can see the rows really do answer
+    the question. Without it, it cannot tell `{"total_spent": 201.65}` from an
+    unrelated number, and a prompt that tells it to refuse on mismatch makes it
+    refuse every aggregate -- correct answers included.
+    """
     import json
+
+    shown = rows[:SUMMARY_ROW_LIMIT]
+    note = ""
+    if len(rows) > SUMMARY_ROW_LIMIT:
+        # Summarizing 50 of 500 rows as if they were all of them is a wrong
+        # total stated confidently. Say so rather than letting it total them.
+        note = (f"\nNOTE: only {len(shown)} of {len(rows)} rows are shown. Do "
+                "not total or rank them; say the result was too large to "
+                "summarize and point at the table below.")
 
     response = _client().messages.create(
         model=MODEL, max_tokens=300,
         output_config={"effort": "low"},
-        system="Answer the question in ONE short sentence using only the rows "
-               "given. Quote the figures exactly as they appear; do not "
-               "recompute, round or add commentary. If the rows are empty, say "
-               "no matching transactions were found.",
+        system=SUMMARY_SYSTEM,
         messages=[{"role": "user",
-                   "content": f"Question: {question}\nRows: {json.dumps(rows[:50], default=str)}"}],
+                   "content": f"Question: {question}\n"
+                              f"Query that produced these rows:\n{sql}\n"
+                              f"Rows: {json.dumps(shown, default=str)}{note}"}],
     )
     return next((b.text for b in response.content if b.type == "text"), "").strip()
 
@@ -238,10 +340,15 @@ def answer_question(question: str) -> dict:
                 return {"answer": "I could not turn that into a query I trust.",
                         "sql": sql, "rows": []}
 
+    # Decided here, not by the model: the model is never given the chance to
+    # narrate an empty result into a figure.
+    if is_empty_result(rows):
+        return {"answer": NO_DATA, "sql": sql, "rows": rows, "no_data": True}
+
     try:
-        answer = _summarize(question, rows)
+        answer = _summarize(question, rows, sql)
     except Exception as exc:
         logger.warning("Summarize failed: %s", exc)
-        answer = f"Found {len(rows)} row(s)." if rows else "No matching transactions."
+        answer = f"Found {len(rows)} row(s)."
 
     return {"answer": answer or f"Found {len(rows)} row(s).", "sql": sql, "rows": rows}

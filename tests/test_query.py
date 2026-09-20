@@ -13,8 +13,10 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
+    # The live-call guard lives in conftest.py. It used to be attempted here as
+    # setattr(query._client, "__call__", ...), which never fired -- Python looks
+    # up __call__ on the type, so query._client() still reached the real one.
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "t.duckdb")
-    monkeypatch.setattr(query._client, "__call__", lambda: pytest.fail("live call"), raising=False)
     db.reset_db()
     yield
 
@@ -92,8 +94,74 @@ def test_the_prompt_carries_what_the_model_needs():
     assert "refusal" in prompt           # restricted questions
 
 
+def test_the_prompt_states_the_refusal_contract():
+    """The anti-hallucination clauses are the point of this prompt, not decoration."""
+    prompt = query.build_sql_prompt("q", query.SCHEMA_DDL, query.CATEGORIES, "2026-09-20")
+    assert "That isn't answerable from the statement data available." in prompt
+    assert "WHEN TO REFUSE" in prompt
+    for forbidden in ("advice", "future", "credit score", "general knowledge"):
+        assert forbidden in prompt.lower(), forbidden
+    assert "never approximate" in prompt.lower()
+
+
 def test_four_suggested_questions():
     assert len(query.SUGGESTED_QUESTIONS) == 4
+
+
+# --- an empty result is never narrated into a figure -----------------------
+
+def test_no_rows_is_an_empty_result():
+    assert query.is_empty_result([]) is True
+
+
+def test_an_all_null_aggregate_row_is_an_empty_result():
+    """SUM() over nothing returns one NULL row, not zero rows.
+
+    This is the whole reason the helper exists: the shape says "I have an
+    answer" while the content says "there was nothing to answer from".
+    """
+    assert query.is_empty_result([{"total_spent": None}]) is True
+    assert query.is_empty_result([{"month": None, "total": None}]) is True
+
+
+def test_a_real_value_is_not_an_empty_result():
+    assert query.is_empty_result([{"total_spent": 0.0}]) is False
+    assert query.is_empty_result([{"merchant": "Netflix", "total": None}]) is False
+
+
+def test_an_empty_result_short_circuits_the_summarizer(monkeypatch):
+    """The model is never handed an empty result to narrate."""
+    sql = "SELECT SUM(amount) AS total FROM transactions WHERE category = 'Nope'"
+    monkeypatch.setattr(query, "_generate_sql", lambda q, error=None: (sql, None))
+    monkeypatch.setattr(query, "run_safe_query", lambda s: [{"total": None}])
+
+    def must_not_run(*a, **k):
+        raise AssertionError("_summarize was called on an empty result")
+    monkeypatch.setattr(query, "_summarize", must_not_run)
+
+    result = query.answer_question("How much did I spend on my yacht?")
+    assert result["no_data"] is True
+    assert result["answer"] == query.NO_DATA
+    assert result["sql"] == sql          # the SQL is still shown; only the prose changes
+
+
+def test_a_populated_result_still_reaches_the_summarizer(monkeypatch):
+    monkeypatch.setattr(query, "_generate_sql",
+                        lambda q, error=None: ("SELECT 1 AS n", None))
+    monkeypatch.setattr(query, "run_safe_query", lambda s: [{"n": 1}])
+    seen = {}
+
+    def summarize(q, rows, sql=""):
+        seen["sql"] = sql
+        return "It is 1."
+    monkeypatch.setattr(query, "_summarize", summarize)
+
+    result = query.answer_question("what is 1")
+    assert result["answer"] == "It is 1."
+    assert "no_data" not in result
+    # The SQL must reach the summarizer -- without it the model cannot tell
+    # that the rows answer the question, and refuses valid results.
+    assert seen["sql"] == "SELECT 1 AS n"
 
 
 # --- answer_question never raises -----------------------------------------
