@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { CloudUpload, X, FileSpreadsheet, TriangleAlert, LoaderCircle } from 'lucide-react';
+import { CloudUpload, X, FileSpreadsheet, TriangleAlert, LoaderCircle, CreditCard } from 'lucide-react';
 import { uploadStatement, uploadStatements } from '../api';
 import { cn } from '../lib/utils';
 
-const ACCOUNT_TYPES = ['Checking', 'Savings', 'Credit Card'];
-
 export default function UploadZone({ open, onClose, onUploaded }) {
   const [files, setFiles] = useState([]);
-  const [accountType, setAccountType] = useState(ACCOUNT_TYPES[0]);
+  // Which file (by index into `files`) is the credit card, if any — at most
+  // one, since the backend only accepts a single apr value per upload. Kept
+  // as an index rather than checkbox state per file so checking one can
+  // cleanly uncheck the others (radio behavior, checkbox appearance).
+  const [creditIndex, setCreditIndex] = useState(null);
   const [nickname, setNickname] = useState('');
   const [apr, setApr] = useState('');
   const [dragActive, setDragActive] = useState(false);
@@ -26,6 +28,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
 
   const reset = () => {
     setFiles([]);
+    setCreditIndex(null);
+    setApr('');
     setStatus('idle');
     setError(null);
     setDragActive(false);
@@ -47,6 +51,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
     }
     setError(null);
     setFiles(picked);
+    setCreditIndex(null);
+    setApr('');
   };
 
   const handleDrop = (e) => {
@@ -55,16 +61,20 @@ export default function UploadZone({ open, onClose, onUploaded }) {
     pickFiles(e.dataTransfer.files);
   };
 
+  const toggleCredit = (index) => {
+    setCreditIndex((current) => (current === index ? null : index));
+    setApr('');
+  };
+
   const submit = async () => {
     if (!files.length) return;
     setStatus('uploading');
     setError(null);
     try {
-      const isCredit = accountType === 'Credit Card';
       const data =
         files.length === 1
-          ? await uploadStatement(files[0], { nickname, apr: isCredit ? apr : '' })
-          : await uploadStatements(files, { apr: isCredit ? apr : '' });
+          ? await uploadStatement(files[0], { nickname, apr: creditIndex === 0 ? apr : '' })
+          : await uploadStatements(files, { apr: creditIndex !== null ? apr : '' });
       onUploaded?.(data);
       handleClose();
     } catch (err) {
@@ -104,7 +114,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           onDragLeave={() => setDragActive(false)}
           onDrop={handleDrop}
           className={cn(
-            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors',
+            'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-colors',
             dragActive ? 'border-primary bg-secondary' : 'border-border hover:bg-muted/50'
           )}
         >
@@ -118,14 +128,10 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           />
           {files.length ? (
             <>
-              <FileSpreadsheet className="size-6 text-primary" />
-              <div className="flex flex-col items-center gap-0.5">
-                {files.map((f) => (
-                  <span key={f.name} className="text-sm font-medium">
-                    {f.name} <span className="text-xs text-muted-foreground">({(f.size / 1024).toFixed(0)} KB)</span>
-                  </span>
-                ))}
-              </div>
+              <FileSpreadsheet className="size-5 text-primary" />
+              <span className="text-sm font-medium">
+                {files.length} file{files.length > 1 ? 's' : ''} selected
+              </span>
               <span className="text-xs text-muted-foreground">click to replace</span>
             </>
           ) : (
@@ -137,62 +143,80 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           )}
         </label>
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="account-type">
-              {files.length > 1 ? 'Includes a credit card?' : 'Account type'}
-            </label>
-            <select
-              id="account-type"
-              value={accountType}
-              onChange={(e) => setAccountType(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {ACCOUNT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-          {files.length <= 1 && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="nickname">
-                Nickname
-              </label>
-              <input
-                id="nickname"
-                type="text"
-                placeholder="e.g. Everyday checking"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-            </div>
-          )}
-        </div>
+        {files.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {files.map((f, i) => {
+              const isCredit = creditIndex === i;
+              return (
+                <div key={`${f.name}-${i}`} className="rounded-xl border border-border bg-background p-3">
+                  <label className="flex cursor-pointer items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      checked={isCredit}
+                      onChange={() => toggleCredit(i)}
+                      className="mt-0.5 size-4 shrink-0 accent-primary"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                        {f.name}
+                        <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                          ({(f.size / 1024).toFixed(0)} KB)
+                        </span>
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                        <CreditCard className="size-3" />
+                        This is a credit card
+                      </span>
+                    </span>
+                  </label>
 
-        {accountType === 'Credit Card' && (
+                  {isCredit && (
+                    <div className="mt-2.5 pl-[26px]">
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor={`apr-${i}`}>
+                        APR (%)
+                      </label>
+                      <input
+                        id={`apr-${i}`}
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        inputMode="decimal"
+                        placeholder="e.g. 24.99"
+                        autoFocus
+                        value={apr}
+                        onChange={(e) => setApr(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Printed on your statement. Without it there's no payoff chart for this card.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {files.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Only one card's APR applies per upload — check the one that's actually a credit card.
+              </p>
+            )}
+          </div>
+        )}
+
+        {files.length === 1 && (
           <div className="mt-3">
-            <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="apr">
-              APR (%)
+            <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="nickname">
+              Nickname
             </label>
             <input
-              id="apr"
-              type="number"
-              step="0.01"
-              min="0"
-              max="100"
-              inputMode="decimal"
-              placeholder="e.g. 24.99"
-              value={apr}
-              onChange={(e) => setApr(e.target.value)}
+              id="nickname"
+              type="text"
+              placeholder="e.g. Everyday checking"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
-            <p className="mt-1 text-xs text-muted-foreground">
-              Printed on your statement. Applied to whichever file is actually the credit account —
-              without it there is no payoff chart.
-            </p>
           </div>
         )}
 
