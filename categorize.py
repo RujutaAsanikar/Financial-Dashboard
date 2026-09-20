@@ -215,10 +215,25 @@ KEYWORD_RULES: tuple[tuple[str, str], ...] = (
 _COMPILED_KEYWORDS = tuple((re.compile(p, re.I), c) for p, c in KEYWORD_RULES)
 
 
-def from_keywords(description: str) -> str | None:
+def from_keywords(description: str, amount: float | None = None) -> str | None:
+    """amount is the transaction's normalized signed amount (positive = money
+    in), when known. Only the "Income" rule cares about it: "payroll" or
+    "salary" in the description means income on a deposit, but on a
+    withdrawal it means someone ELSE's wages were paid out of this account
+    -- money out, not in. Forcing that to Income was a real bug (a company
+    account's outgoing payroll run landed in Income, inflating it and
+    hiding real spending). When amount is unknown (the offline dictionary
+    builder has no per-transaction sign to check), the Income rule is
+    skipped rather than guessed -- consistent with "Other is honest, a
+    wrong category is not."
+    """
+    text = description or ""
     for pattern, category in _COMPILED_KEYWORDS:
-        if pattern.search(description or ""):
-            return None if category == "Other" else category
+        if not pattern.search(text):
+            continue
+        if category == "Income" and not (amount is not None and amount > 0):
+            continue
+        return None if category == "Other" else category
     return None
 
 
@@ -298,12 +313,27 @@ def _arbitrate_chunk(chunk: list[dict]) -> dict[int, str]:
     lines = []
     for c in chunk:
         hint = f" (a different system guessed: {c['triqai_hint']})" if c["triqai_hint"] else ""
-        lines.append(f"{c['index']}: {c['description']!r}{hint}")
+        amount = c.get("amount")
+        if amount is None:
+            direction = "unknown direction"
+        elif amount > 0:
+            direction = "money IN -- a deposit/credit"
+        elif amount < 0:
+            direction = "money OUT -- a withdrawal/spend"
+        else:
+            direction = "zero amount"
+        lines.append(f"{c['index']}: {c['description']!r} [{direction}]{hint}")
 
     prompt = (
         "Categorize each bank transaction description below into EXACTLY one "
         "of these categories:\n"
         f"{', '.join(CATEGORIES)}\n\n"
+        "Each line shows whether the transaction is money IN or money OUT of "
+        "the account -- use it. 'Payroll'/'Salary' wording on money OUT means "
+        "this account paid someone else's wages (not the account holder's "
+        "income) -- categorize what the money was actually spent on, or "
+        "'Other' if that is not clear, never 'Income'. 'Income' only fits "
+        "money IN.\n\n"
         "The parenthetical hint after some lines is another system's guess -- "
         "it may be wrong; use your own judgement, it is not authoritative.\n\n"
         "Transactions:\n" + "\n".join(lines) +
@@ -366,7 +396,7 @@ def categorize(txns: list[dict], *, allow_network: bool | None = None) -> list[d
             layer = "cache"
 
         if category is None:
-            category = from_keywords(txn.get("description") or "")
+            category = from_keywords(txn.get("description") or "", txn.get("amount"))
             layer = "keyword"
 
         if category is not None:
@@ -391,13 +421,15 @@ def categorize(txns: list[dict], *, allow_network: bool | None = None) -> list[d
         needs_arbitration.append({
             "txn": txn, "merchant": merchant,
             "description": txn.get("description") or "",
+            "amount": txn.get("amount"),
             "triqai_category": triqai_category,
         })
 
     arbitrated: dict[int, str] = {}
     if needs_arbitration and allow_network:
         arbitrated = _arbitrate_batch([
-            {"index": i, "description": c["description"], "triqai_hint": c["triqai_category"]}
+            {"index": i, "description": c["description"], "amount": c["amount"],
+             "triqai_hint": c["triqai_category"]}
             for i, c in enumerate(needs_arbitration)
         ])
 
