@@ -1,11 +1,11 @@
 # Financial-Dashboard
 
 Upload your bank and credit-card statements. Get back a dashboard that tells you
-where the money actually went — what's quietly recurring, what got more
-expensive, how long the card will take to pay off — and lets you ask questions
+where the money actually went, what's quietly recurring, what got more
+expensive, how long the card will take to pay off, and lets you ask questions
 about it in plain English.
 
-**It is not an LLM wrapper.** A model reads the PDF and a model writes SQL. Every
+A model reads the PDF and a model writes SQL. Every
 number in between is produced by deterministic Python you can read and test:
 reconciliation, transfer matching, recurring detection, amortization. The model
 never computes a figure.
