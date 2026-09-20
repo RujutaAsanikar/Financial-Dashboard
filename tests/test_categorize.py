@@ -205,6 +205,35 @@ def test_bare_mobile_no_longer_forces_utilities():
     assert C.from_keywords("T-Mobile Wireless Bill") == "Utilities"  # "wireless" still catches it
 
 
+def test_payroll_withdrawal_is_not_forced_to_income():
+    """An outgoing payroll run (a business paying employees) is money OUT,
+    not the account holder's income -- forcing it to Income was the bug."""
+    assert C.from_keywords("06/29 Payroll Run OGIe0 ST ASO-A6", -6493.65) is None
+
+
+def test_payroll_deposit_is_still_income():
+    assert C.from_keywords("Payroll Deposit - EMPLOYER", 2500.0) == "Income"
+
+
+def test_from_keywords_without_a_known_amount_does_not_guess_income():
+    """The offline dictionary builder has no per-transaction sign to check,
+    so it must not guess Income from the description alone."""
+    assert C.from_keywords("Payroll Run") is None
+    assert C.from_keywords("SALARY PAYMENT") is None
+
+
+def test_payroll_withdrawal_falls_through_to_arbitration_not_income(monkeypatch):
+    monkeypatch.setattr(
+        C.triq, "lookup",
+        lambda *a, **k: {"error": False, "merchant": "X",
+                         "category": "Professional Services", "confidence": 50})
+    fake_anthropic(monkeypatch, {0: "Other"})
+    rows = C.categorize(
+        [txn("06/29 Payroll Run OGIe0 ST ASO-A6", merchant="Payroll Run", amount=-6493.65)],
+        allow_network=True)
+    assert rows[0]["category"] != "Income"
+
+
 # --- layer 5: Anthropic arbitration ----------------------------------------
 
 def test_low_confidence_triqai_triggers_arbitration_anthropic_wins_on_disagreement(monkeypatch):
