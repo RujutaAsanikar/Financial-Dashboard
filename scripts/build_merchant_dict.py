@@ -18,7 +18,6 @@ layer 1 hits on the same string Stage 4 produced.
 """
 
 import csv
-import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -27,44 +26,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import normalize as N  # noqa: E402
-from categorize import CATEGORIES, map_triq_category  # noqa: E402
+from categorize import CATEGORIES, from_keywords, map_triq_category  # noqa: E402
+# KEYWORD_RULES/from_keywords live in categorize.py now -- it's a runtime
+# dependency there (live categorization), this script just reuses the same
+# rules at build time so layer 1 and the live keyword layer never drift.
 
 ALIASES = ROOT / "data" / "merchant_aliases.csv"
 OUTPUT = ROOT / "data" / "merchant_dict.csv"
-
-# Applied in order to the raw description; first match wins. Deliberately
-# narrow -- a keyword that could belong to two categories is left out rather
-# than guessed, because "Other" is honest and a wrong category is not.
-KEYWORD_RULES: tuple[tuple[str, str], ...] = (
-    (r"payroll|salary|direct deposit", "Income"),
-    (r"interest charge|overdraft|annual membership fee|\bfees?\b|nsf|service charge",
-     "Fees & Interest"),
-    (r"funds transfer|transfer to|\bxfer\b|e-?transfer", "Transfer"),
-    (r"atm withdrawal|cash withdrawal", "Transfer"),
-    (r"automatic payment|payment - thank you|bill payment - visa|"
-     r"bill payment - mastercard|bill payment - amex", "Transfer"),
-    (r"mortgage|\brent\b|property tax|condo fee", "Housing"),
-    (r"hydro|electric|\bgas bill\b|water bill|internet|\bmobile\b|"
-     r"\bcable\b|telecom|wireless", "Utilities"),
-    (r"pharmacy|drug ?mart|dental|clinic|medical|optical", "Health"),
-    (r"\bgym\b|fitness|yoga", "Health"),
-    (r"supermarket|grocer|market\b", "Groceries"),
-    (r"restaurant|coffee|cafe|café|bistro|noodle|pizza|bakery", "Food & Drink"),
-    (r"gas bar|petro|fuel|shell|esso|chevron", "Transportation"),
-    (r"transit|parking|railway|\bbus\b|airline|airport", "Transportation"),
-    (r"bookstore|hardware|electronics|clothing|department", "Shopping"),
-    (r"tuition|university|college|course", "Education"),
-    (r"insurance", "Other"),  # health vs home is unknowable here; do not guess
-)
-
-_COMPILED = tuple((re.compile(p, re.I), c) for p, c in KEYWORD_RULES)
-
-
-def from_keywords(description: str) -> str | None:
-    for pattern, category in _COMPILED:
-        if pattern.search(description or ""):
-            return None if category == "Other" else category
-    return None
 
 
 def main() -> int:
