@@ -44,8 +44,7 @@ _SCHEMA = (
         currency            VARCHAR,
         opening_balance     DOUBLE,
         closing_balance     DOUBLE,
-        apr                 DOUBLE,
-        credit_limit        DOUBLE
+        apr                 DOUBLE
     )
     """,
     """
@@ -176,9 +175,9 @@ def upsert_account(account: dict) -> None:
     (the header totals) that have no columns here.
 
     On conflict, a new non-null value wins but a null never overwrites a
-    stored one. That matters most for apr and credit_limit: they come from the
-    upload form, so a second upload that leaves the form blank would otherwise
-    erase the APR and silently empty the payoff section.
+    stored one. That matters most for apr: it comes from the upload form, so a
+    second upload that leaves the form blank would otherwise erase it and
+    silently empty the payoff section.
     """
     columns = PERSISTED_ACCOUNT_FIELDS
     placeholders = ", ".join("?" for _ in columns)

@@ -93,7 +93,7 @@ DEFAULT_CURRENCY = "USD"
 # validation-only field here can never silently become a database column.
 PERSISTED_ACCOUNT_FIELDS = (
     "id", "bank_name", "account_holder_name", "account_last4", "account_type",
-    "currency", "opening_balance", "closing_balance", "apr", "credit_limit",
+    "currency", "opening_balance", "closing_balance", "apr",
 )
 
 # Statement header figures, kept only so Stage 2's check B has inputs.
@@ -233,11 +233,10 @@ def _to_float(value) -> float | None:
         return None
 
 
-def adapt(parser_json: dict, apr: float | None = None,
-          credit_limit: float | None = None) -> tuple[dict, list[dict]]:
+def adapt(parser_json: dict, apr: float | None = None) -> tuple[dict, list[dict]]:
     """Convert one parser statement into (account, transactions).
 
-    apr and credit_limit come from the upload form, not the statement.
+    apr comes from the upload form, not the statement.
     Raises ValueError if the payload has no "transactions" key.
 
     The account dict, and where each key ends up:
@@ -251,7 +250,6 @@ def adapt(parser_json: dict, apr: float | None = None,
         opening_balance      persisted
         closing_balance      persisted
         apr                  persisted   from the upload form, not the JSON
-        credit_limit         persisted   from the upload form, not the JSON
         total_deposits       VALIDATION-ONLY  printed, else derived from rows
         total_withdrawals    VALIDATION-ONLY  printed, else derived from rows
         totals_source        VALIDATION-ONLY  which of those two it was
@@ -289,20 +287,19 @@ def adapt(parser_json: dict, apr: float | None = None,
         parser_json.get("bank_name"), acct_last4, parser_json.get("statement_period_start")
     )
 
-    # APR and credit limit are properties of a borrowing account. A chequing
-    # account has neither, so an APR typed into the upload form against one is
-    # a mistake rather than data, and is dropped here.
+    # An APR is a property of a borrowing account. A chequing account has
+    # none, so an APR typed into the upload form against one is a mistake
+    # rather than data, and is dropped here.
     #
     # The guard lives in the adapter, not the endpoint, because this is the
     # single point every path goes through -- /api/upload, /api/upload-batch,
     # and any direct call. Putting it in a route would leave the next caller
     # to remember it.
     account_type = normalize_account_type(parser_json.get("account_type"))
-    if account_type != "credit" and (apr is not None or credit_limit is not None):
-        logger.warning(
-            "Ignoring apr=%s / credit_limit=%s on %s account %s: only a credit "
-            "account can carry them", apr, credit_limit, account_type, account_id)
-        apr = credit_limit = None
+    if account_type != "credit" and apr is not None:
+        logger.warning("Ignoring apr=%s on %s account %s: only a credit account "
+                       "can carry one", apr, account_type, account_id)
+        apr = None
 
     account = {
         "id": account_id,
@@ -320,7 +317,6 @@ def adapt(parser_json: dict, apr: float | None = None,
         "total_withdrawals": _to_float(parser_json.get("total_withdrawals")),
         "totals_source": None,
         "apr": apr,
-        "credit_limit": credit_limit,
     }
 
     transactions: list[dict] = []

@@ -352,7 +352,6 @@ def get_mock_dashboard() -> dict:
 async def upload(
     file: UploadFile = File(...),
     apr: float | None = Form(default=None),
-    credit_limit: float | None = Form(default=None),
     account_nickname: str | None = Form(default=None),
 ) -> dict:
     """Ingest one parser JSON file and return the updated dashboard."""
@@ -372,7 +371,7 @@ async def upload(
                             detail=f"That file is not valid JSON: {exc}") from exc
 
     try:
-        result = aggregate.ingest(parser_json, apr=apr, credit_limit=credit_limit,
+        result = aggregate.ingest(parser_json, apr=apr,
                                   account_nickname=account_nickname)
     except ValueError as exc:
         # adapt() raises this when the payload is not parser output at all.
@@ -391,7 +390,6 @@ async def upload(
 async def upload_batch(
     files: list[UploadFile] = File(...),
     apr: float | None = Form(default=None),
-    credit_limit: float | None = Form(default=None),
 ) -> dict:
     """Ingest several statements in one request.
 
@@ -400,9 +398,8 @@ async def upload_batch(
     separately leaves the card payment counted as spending until the second
     one lands -- the dashboard visibly corrects itself mid-demo.
 
-    apr and credit_limit apply to whichever statement turns out to be a
-    credit account; they are ignored on the others, so one form serves a
-    mixed batch.
+    apr applies to whichever statement turns out to be a credit account and
+    is ignored on the others, so one form serves a mixed batch.
 
     A file that fails is skipped rather than failing the batch: five good
     statements should not be lost because the sixth was a holiday snap. The
@@ -438,11 +435,7 @@ async def upload_batch(
         )
 
         try:
-            result = aggregate.ingest(
-                parser_json,
-                apr=apr if is_credit else None,
-                credit_limit=credit_limit if is_credit else None,
-            )
+            result = aggregate.ingest(parser_json, apr=apr if is_credit else None)
             ingested.append({"file": name, **result})
         except ValueError as exc:
             failures.append({"file": name, "error": str(exc)})

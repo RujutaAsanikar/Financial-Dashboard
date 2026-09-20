@@ -198,7 +198,6 @@ def build_dashboard() -> dict:
 
 
 def ingest(parser_json: dict, apr: float | None = None,
-           credit_limit: float | None = None,
            account_nickname: str | None = None) -> dict:
     """Run one statement through the pipeline and store the results.
 
@@ -213,7 +212,7 @@ def ingest(parser_json: dict, apr: float | None = None,
     from transfers import mark_transfers
     from validate import reconcile
 
-    account, txns = adapt(parser_json, apr=apr, credit_limit=credit_limit)
+    account, txns = adapt(parser_json, apr=apr)
     if account_nickname:
         account["bank_name"] = account_nickname
 

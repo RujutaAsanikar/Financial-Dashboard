@@ -49,7 +49,7 @@ accounts(
   id VARCHAR, bank_name VARCHAR, account_holder_name VARCHAR,
   account_last4 VARCHAR, account_type VARCHAR,  -- checking|savings|credit|unknown
   currency VARCHAR, opening_balance DOUBLE, closing_balance DOUBLE,
-  apr DOUBLE, credit_limit DOUBLE
+  apr DOUBLE
 )
 """
 

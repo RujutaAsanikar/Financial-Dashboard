@@ -195,14 +195,13 @@ def test_upsert_does_not_erase_apr_with_a_null():
     """apr comes from the upload form. A second upload with the form left
     blank must not empty the payoff section."""
     acct, _ = load("credit")
-    db.upsert_account({**acct, "apr": 24.99, "credit_limit": 5000.0})
-    db.upsert_account({**acct, "apr": None, "credit_limit": None})
+    db.upsert_account({**acct, "apr": 24.99})
+    db.upsert_account({**acct, "apr": None})
 
     with db.get_con() as con:
-        apr, limit = con.execute(
-            "SELECT apr, credit_limit FROM accounts WHERE id = ?", [acct["id"]]).fetchone()
+        apr = con.execute(
+            "SELECT apr FROM accounts WHERE id = ?", [acct["id"]]).fetchone()[0]
     assert apr == 24.99
-    assert limit == 5000.0
 
 
 def test_validation_only_fields_are_not_columns():

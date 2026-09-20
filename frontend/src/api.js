@@ -33,9 +33,6 @@ export async function uploadStatement(file, meta = {}) {
   // Field names must match the backend's form parameters exactly; anything
   // else is silently ignored by FastAPI.
   if (meta.apr != null && meta.apr !== '') form.append('apr', meta.apr);
-  if (meta.creditLimit != null && meta.creditLimit !== '') {
-    form.append('credit_limit', meta.creditLimit);
-  }
   if (meta.nickname) form.append('account_nickname', meta.nickname);
 
   const res = await fetch(`${BASE}/api/upload`, { method: 'POST', body: form });
@@ -61,9 +58,6 @@ export async function uploadStatements(files, meta = {}) {
   const form = new FormData();
   for (const file of files) form.append('files', file);
   if (meta.apr != null && meta.apr !== '') form.append('apr', meta.apr);
-  if (meta.creditLimit != null && meta.creditLimit !== '') {
-    form.append('credit_limit', meta.creditLimit);
-  }
 
   const res = await fetch(`${BASE}/api/upload-batch`, { method: 'POST', body: form });
   if (!res.ok) throw new Error(await errorText(res, 'Upload failed'));

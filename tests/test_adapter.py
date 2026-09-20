@@ -411,15 +411,14 @@ def test_currency_defaults_to_usd():
     assert acct["currency"] == "CAD"
 
 
-def test_apr_and_credit_limit_come_from_arguments():
+def test_apr_comes_from_the_argument():
     raw = load("credit")
-    assert "apr" not in raw and "credit_limit" not in raw
-    acct, _ = adapt(raw, apr=24.99, credit_limit=5000.0)
+    assert "apr" not in raw
+    acct, _ = adapt(raw, apr=24.99)
     assert acct["apr"] == 24.99
-    assert acct["credit_limit"] == 5000.0
 
     acct, _ = adapt(raw)
-    assert acct["apr"] is None and acct["credit_limit"] is None
+    assert acct["apr"] is None
 
 
 # --- error handling --------------------------------------------------------
@@ -537,7 +536,7 @@ def test_the_real_parser_file_recovers_every_row():
     assert all(t["date"] is not None for t in txns)
 
 
-# --- apr and credit_limit belong to borrowing accounts only ---------------
+# --- apr belongs to borrowing accounts only --------------------------------
 
 @pytest.mark.parametrize("account_type", [
     "Chequing", "Checking", "Savings", "Money Market", "Visa Debit", "Gibberish",
@@ -547,11 +546,10 @@ def test_a_non_credit_account_never_carries_an_apr(account_type):
     one is a mistake, not data, and must not reach accounts[].apr."""
     acct, _ = adapt({"bank_name": "B", "account_number": "1234",
                      "account_type": account_type, "transactions": []},
-                    apr=24.99, credit_limit=5000.0)
+                    apr=24.99)
 
     assert acct["account_type"] != "credit"
     assert acct["apr"] is None
-    assert acct["credit_limit"] is None
 
 
 @pytest.mark.parametrize("account_type", [
@@ -560,17 +558,16 @@ def test_a_non_credit_account_never_carries_an_apr(account_type):
 def test_a_credit_account_keeps_its_apr(account_type):
     acct, _ = adapt({"bank_name": "B", "account_number": "1234",
                      "account_type": account_type, "transactions": []},
-                    apr=24.99, credit_limit=5000.0)
+                    apr=24.99)
 
     assert acct["account_type"] == "credit"
     assert acct["apr"] == 24.99
-    assert acct["credit_limit"] == 5000.0
 
 
 def test_dropping_an_apr_does_not_disturb_anything_else():
     raw = load("checking")
     plain, plain_txns = adapt(raw)
-    with_apr, with_txns = adapt(raw, apr=24.99, credit_limit=5000.0)
+    with_apr, with_txns = adapt(raw, apr=24.99)
 
     assert plain == with_apr
     assert plain_txns == with_txns
