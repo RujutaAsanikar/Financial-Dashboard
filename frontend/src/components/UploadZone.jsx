@@ -38,8 +38,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
 
   const pickFile = (f) => {
     if (!f) return;
-    if (!/\.csv$/i.test(f.name)) {
-      setError('Only .csv files are supported — please export a CSV from your bank.');
+    if (!/\.json$/i.test(f.name)) {
+      setError('Please upload a .json file from the parser.');
       setFile(null);
       return;
     }
@@ -79,7 +79,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-semibold">Upload statement</h2>
-            <p className="text-xs text-muted-foreground">CSV export from your bank. We never send this anywhere but our own backend.</p>
+            <p className="text-xs text-muted-foreground">The parser's JSON output for your statement. We never send this anywhere but our own backend.</p>
           </div>
           <button
             type="button"
@@ -106,7 +106,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           <input
             ref={inputRef}
             type="file"
-            accept=".csv"
+            accept=".json"
             className="sr-only"
             onChange={(e) => pickFile(e.target.files?.[0])}
           />
@@ -119,8 +119,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           ) : (
             <>
               <CloudUpload className="size-6 text-muted-foreground" />
-              <span className="text-sm font-medium">Drop your CSV here or click to browse</span>
-              <span className="text-xs text-muted-foreground">.csv only</span>
+              <span className="text-sm font-medium">Drop your statement JSON here or click to browse</span>
+              <span className="text-xs text-muted-foreground">.json only</span>
             </>
           )}
         </label>
