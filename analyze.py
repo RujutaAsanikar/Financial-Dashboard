@@ -44,6 +44,7 @@ WHAT IS EXCLUDED, AND WHY
 
 import csv
 import logging
+import os
 import re
 import statistics
 from collections import Counter
@@ -115,14 +116,177 @@ def load_recurring_kinds(force: bool = False) -> dict[str, str]:
 def classify_nature(merchant: str, category: str | None) -> str:
     """Category first (free, deterministic), then the reviewed cache.
 
-    Defaults to UNCLEAR rather than guessing. UNCLEAR is routed to repeated
-    spending, not subscriptions, because a fabricated subscription is on
-    screen and wrong while an under-labelled habit is merely unremarkable.
+    Offline and total. Defaults to UNCLEAR rather than guessing. UNCLEAR is
+    routed to repeated spending, not subscriptions, because a fabricated
+    subscription is on screen and wrong while an under-labelled habit is
+    merely unremarkable.
     """
     by_category = NATURE_BY_CATEGORY.get((category or "").strip())
     if by_category:
         return by_category
     return load_recurring_kinds().get((merchant or "").strip(), UNCLEAR)
+
+
+# --- live fallback ---------------------------------------------------------
+#
+# Opt-in. Tests never set the flag, so the suite is offline by construction
+# rather than by discipline. Every failure mode lands on UNCLEAR, which is a
+# usable answer, so the pipeline cannot be broken by the network.
+
+LIVE_CLASSIFY_ENV = "CLAUDE_LIVE_CLASSIFY"
+
+# One batched call per process, capped. The batch shape matters: classifying
+# per merchant would put N sequential round-trips on an upload request.
+MAX_LIVE_CLASSIFICATIONS = int(os.getenv("CLAUDE_MAX_LIVE_CLASSIFICATIONS", "40"))
+LIVE_MODEL = "claude-opus-4-8"
+LIVE_TIMEOUT_SECONDS = 20
+
+# Shared with scripts/classify_recurring_kinds.py so the offline batch and the
+# live fallback cannot drift apart and start labelling the same merchant
+# differently.
+CLASSIFY_SYSTEM = """\
+You classify merchants by HOW a charge recurs, not whether it recurs. A
+deterministic system has already confirmed each one recurs on a regular
+cadence. Do not second-guess that. Your only job is the kind.
+
+  subscription  Billed automatically by prior agreement. The customer signed
+                up once and money leaves until they cancel. Netflix, Spotify,
+                a gym membership, software seats, insurance premiums.
+
+  bill          Billed automatically but the amount varies with usage, and
+                stopping means losing the service rather than cancelling a
+                plan. Electricity, water, gas, phone, internet.
+
+  habitual      The customer chooses to buy each time. Regular timing reflects
+                a routine, not an agreement. Coffee, groceries, lunch, fuel,
+                transit fares. Cancelling is not a concept here.
+
+  unclear       You do not recognise the merchant, or the name is too generic
+                to tell. Prefer this over guessing.
+
+The decisive test: could the customer stop this by cancelling something, or
+only by changing their behaviour? Cancel -> subscription or bill. Behaviour
+-> habitual.
+
+Rules:
+- Generic descriptors ("SUPERMARKET", "PHARMACY", "BOOKSTORE") are not brands.
+  Return unclear rather than guessing which chain it might be.
+- Judge the merchant, not the cadence. A weekly subscription is still a
+  subscription; a monthly grocery run is still habitual.
+- A fee, interest charge, or cheque is never any of the three: unclear.
+- Echo each merchant string back exactly as given."""
+
+_live_calls = 0
+
+
+def live_classifications_used() -> int:
+    return _live_calls
+
+
+def _append_kinds(learned: dict[str, str]) -> None:
+    """Persist live answers so the network is consulted once per merchant, ever."""
+    if not learned:
+        return
+    KINDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not KINDS_PATH.exists()
+    with KINDS_PATH.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=KINDS_FIELDS)
+        if new_file:
+            writer.writeheader()
+        for merchant, nature in sorted(learned.items()):
+            writer.writerow({"merchant": merchant, "nature": nature, "source": "live"})
+    load_recurring_kinds(force=True)
+
+
+def classify_live(merchants: list[str]) -> dict[str, str]:
+    """One batched call. Returns only merchants it could label; never raises.
+
+    Answers of "unclear" are omitted rather than stored, so a later run can
+    try again once the merchant has a real name behind it.
+    """
+    if not merchants:
+        return {}
+
+    try:
+        import anthropic
+        from pydantic import BaseModel
+    except ImportError:
+        logger.warning("anthropic is not installed; skipping live classification")
+        return {}
+
+    class _Kind(BaseModel):
+        merchant: str
+        nature: str
+
+    class _Result(BaseModel):
+        merchants: list[_Kind]
+
+    try:
+        client = anthropic.Anthropic(timeout=LIVE_TIMEOUT_SECONDS, max_retries=1)
+        response = client.messages.parse(
+            model=LIVE_MODEL,
+            max_tokens=4096,
+            # A short per-merchant judgement, not a reasoning problem.
+            output_config={"effort": "low"},
+            system=CLASSIFY_SYSTEM,
+            messages=[{"role": "user",
+                       "content": "Merchants:\n" + "\n".join(merchants)}],
+            output_format=_Result,
+        )
+    except Exception as exc:
+        logger.warning("Live classification failed (%s: %s); %d merchant(s) stay "
+                       "in repeated spending", type(exc).__name__, exc, len(merchants))
+        return {}
+
+    requested = set(merchants)
+    learned: dict[str, str] = {}
+    for item in response.parsed_output.merchants:
+        nature = (item.nature or "").strip().lower()
+        # Only accept labels for merchants we actually asked about -- a
+        # hallucinated extra row must not enter the cache.
+        if item.merchant in requested and nature in NATURES and nature != UNCLEAR:
+            learned[item.merchant] = nature
+
+    logger.info("Live classification: %d/%d merchant(s) labelled",
+                len(learned), len(merchants))
+    return learned
+
+
+def classify_natures(pairs: list[tuple[str, str | None]], *,
+                     allow_network: bool | None = None) -> dict[str, str]:
+    """Resolve many (merchant, category) pairs at once.
+
+    Category -> cache -> one batched live call -> UNCLEAR. Batching is the
+    point: a live call per merchant would put N sequential round-trips on the
+    upload request.
+    """
+    global _live_calls
+
+    natures = {merchant: classify_nature(merchant, category)
+               for merchant, category in pairs}
+
+    unresolved = sorted(m for m, n in natures.items() if n == UNCLEAR and m)
+    if not unresolved:
+        return natures
+
+    if allow_network is None:
+        allow_network = os.getenv(LIVE_CLASSIFY_ENV, "").lower() in ("1", "true", "yes")
+    if not allow_network:
+        return natures
+
+    if _live_calls >= MAX_LIVE_CLASSIFICATIONS:
+        logger.warning("Live classification budget of %d exhausted; %d merchant(s) "
+                       "stay in repeated spending",
+                       MAX_LIVE_CLASSIFICATIONS, len(unresolved))
+        return natures
+
+    batch = unresolved[:MAX_LIVE_CLASSIFICATIONS - _live_calls]
+    _live_calls += len(batch)
+
+    learned = classify_live(batch)
+    _append_kinds(learned)
+    natures.update(learned)
+    return natures
 
 MIN_OCCURRENCES = 3
 CADENCES = (7, 14, 30, 90, 365)
@@ -212,12 +376,16 @@ def _eligible(txn: dict) -> bool:
     return True
 
 
-def find_recurring(txns: list[dict]) -> list[dict]:
+def find_recurring(txns: list[dict], *, allow_network: bool | None = None) -> list[dict]:
     """Detect subscriptions and recurring bills across all accounts.
 
     Groups by normalized merchant regardless of account, because a
     subscription can move from one card to another and should not read as two
     separate short histories. Sets is_recurring=True on contributing rows.
+
+    allow_network defaults to the CLAUDE_LIVE_CLASSIFY environment variable
+    and controls only the subscription/habitual labelling -- detection itself
+    is always deterministic and never touches the network.
     """
     if not isinstance(txns, list) or not txns:
         logger.info("Recurring detection: no transactions")
@@ -272,7 +440,9 @@ def find_recurring(txns: list[dict]) -> list[dict]:
             "merchant": merchant,
             "amount": round(median_amount, 2),
             "cadence_days": cadence_days,
-            "nature": classify_nature(merchant, category),
+            # Filled in by one batched pass below, not per merchant.
+            "nature": None,
+            "_category": category,
             "occurrences": len(rows),
             "last_seen": dates[-1].isoformat(),
             # cadence_days rather than the raw median gap, which CLAUDE.md
@@ -286,6 +456,15 @@ def find_recurring(txns: list[dict]) -> list[dict]:
             "account_id": rows[-1].get("account_id") or "",
             "kind": kind,
         })
+
+    # One resolution pass for every merchant at once. If the live fallback is
+    # enabled, this is the single call for the whole upload.
+    resolved = classify_natures(
+        [(r["merchant"], r.pop("_category")) for r in results],
+        allow_network=allow_network,
+    )
+    for row in results:
+        row["nature"] = resolved.get(row["merchant"], UNCLEAR)
 
     results.sort(key=lambda r: (-r["annual_cost"], r["merchant"]))
 

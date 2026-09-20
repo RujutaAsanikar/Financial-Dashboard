@@ -312,12 +312,25 @@ NOT_SUBSCRIPTION_WORDS = re.compile(r"cheque|atm|transfer|payroll|deposit", re.I
 
 import analyze as A  # noqa: E402
 
+# Captured at import, before the autouse fixture replaces it. The three tests
+# that exercise classify_live's own error handling restore this.
+_REAL_CLASSIFY_LIVE = A.classify_live
+
 
 @pytest.fixture(autouse=True)
 def isolated_kinds(tmp_path, monkeypatch):
-    """Own kinds cache per test; never reads the committed one."""
+    """Own kinds cache per test, and a hard ban on reaching Claude.
+
+    Anything that tries a live call fails loudly rather than silently making
+    the suite depend on someone's API key.
+    """
     monkeypatch.setattr(A, "KINDS_PATH", tmp_path / "recurring_kinds.csv")
     monkeypatch.setattr(A, "_kinds", None)
+    monkeypatch.setattr(A, "_live_calls", 0)
+    monkeypatch.delenv(A.LIVE_CLASSIFY_ENV, raising=False)
+    monkeypatch.setattr(
+        A, "classify_live",
+        lambda *a, **k: pytest.fail("a test attempted a live Claude call"))
     yield
 
 
@@ -448,6 +461,161 @@ def test_results_validate_against_the_frozen_models():
                     if k in Subscription.model_fields})
     RepeatedSpending(**{k: v for k, v in habit.items()
                         if k in RepeatedSpending.model_fields})
+
+
+# --- the live fallback ----------------------------------------------------
+
+def stub_live(monkeypatch, answers, calls=None):
+    """Replace the live call with a recorder returning `answers`."""
+    def fake(merchants):
+        if calls is not None:
+            calls.append(list(merchants))
+        return {m: answers[m] for m in merchants if m in answers}
+    monkeypatch.setattr(A, "classify_live", fake)
+
+
+def test_live_is_off_by_default():
+    """The autouse fixture fails on any live call, so reaching the end proves it."""
+    assert A.classify_natures([("Mystery Merchant", "Other")]) == \
+        {"Mystery Merchant": A.UNCLEAR}
+    assert A.live_classifications_used() == 0
+
+
+def test_live_only_asked_about_what_nothing_else_resolved(monkeypatch):
+    """Category and cache come first. Only the true residue costs anything."""
+    write_kinds([("Known Gym", A.SUBSCRIPTION)])
+    calls = []
+    stub_live(monkeypatch, {"Mystery": A.SUBSCRIPTION}, calls)
+
+    result = A.classify_natures([
+        ("Netflix", "Subscriptions"),      # category settles it
+        ("Coffee Shop", "Food & Drink"),   # category settles it
+        ("Known Gym", "Health"),           # cache settles it
+        ("Mystery", "Other"),              # nobody settles it
+    ], allow_network=True)
+
+    assert calls == [["Mystery"]], "asked about more than the residue"
+    assert result["Netflix"] == A.SUBSCRIPTION
+    assert result["Known Gym"] == A.SUBSCRIPTION
+    assert result["Mystery"] == A.SUBSCRIPTION
+
+
+def test_everything_resolved_means_no_call_at_all(monkeypatch):
+    stub_live(monkeypatch, {}, calls := [])
+    A.classify_natures([("Netflix", "Subscriptions")], allow_network=True)
+    assert calls == []
+
+
+def test_one_batched_call_not_one_per_merchant(monkeypatch):
+    """N sequential round-trips on an upload request would be a timeout."""
+    calls = []
+    stub_live(monkeypatch, {f"M{i}": A.HABITUAL for i in range(12)}, calls)
+
+    A.classify_natures([(f"M{i}", "Other") for i in range(12)], allow_network=True)
+
+    assert len(calls) == 1
+    assert len(calls[0]) == 12
+
+
+def test_live_answers_are_cached_so_the_next_run_is_free(monkeypatch):
+    calls = []
+    stub_live(monkeypatch, {"Mystery": A.BILL}, calls)
+
+    A.classify_natures([("Mystery", "Other")], allow_network=True)
+    assert len(calls) == 1
+
+    monkeypatch.setattr(A, "_live_calls", 0)
+    again = A.classify_natures([("Mystery", "Other")], allow_network=True)
+    assert len(calls) == 1, "second run should hit the cache, not the network"
+    assert again["Mystery"] == A.BILL
+
+
+def test_budget_caps_the_batch(monkeypatch):
+    monkeypatch.setattr(A, "MAX_LIVE_CLASSIFICATIONS", 3)
+    calls = []
+    stub_live(monkeypatch, {}, calls)
+
+    A.classify_natures([(f"M{i}", "Other") for i in range(10)], allow_network=True)
+
+    assert len(calls[0]) == 3, "budget not enforced"
+
+
+def test_exhausted_budget_degrades_to_unclear(monkeypatch):
+    monkeypatch.setattr(A, "MAX_LIVE_CLASSIFICATIONS", 0)
+    stub_live(monkeypatch, {"Mystery": A.SUBSCRIPTION}, calls := [])
+
+    result = A.classify_natures([("Mystery", "Other")], allow_network=True)
+
+    assert calls == []
+    assert result["Mystery"] == A.UNCLEAR
+
+
+@pytest.mark.parametrize("failure", [
+    lambda *a, **k: {},                                       # returned nothing
+    lambda *a, **k: {"Someone Else": A.SUBSCRIPTION},         # answered the wrong merchant
+])
+def test_a_useless_live_answer_leaves_the_merchant_unclear(monkeypatch, failure):
+    monkeypatch.setattr(A, "classify_live", failure)
+    result = A.classify_natures([("Mystery", "Other")], allow_network=True)
+    assert result["Mystery"] == A.UNCLEAR
+
+
+def test_classify_live_never_raises(monkeypatch):
+    """No key, no network, a timeout, a malformed response -- all the same."""
+    import builtins
+    real_import = builtins.__import__
+
+    def no_anthropic(name, *args, **kwargs):
+        if name == "anthropic":
+            raise ImportError("not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_anthropic)
+    monkeypatch.setattr(A, "classify_live", _REAL_CLASSIFY_LIVE)
+    assert A.classify_live(["Mystery"]) == {}
+
+
+def test_classify_live_survives_an_exploding_client(monkeypatch):
+    import anthropic
+    monkeypatch.setattr(anthropic, "Anthropic",
+                        lambda **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(A, "classify_live", _REAL_CLASSIFY_LIVE)
+    assert A.classify_live(["Mystery"]) == {}
+
+
+def test_empty_batch_short_circuits(monkeypatch):
+    monkeypatch.setattr(A, "classify_live", _REAL_CLASSIFY_LIVE)
+    assert A.classify_live([]) == {}
+
+
+def test_find_recurring_passes_the_flag_through(monkeypatch):
+    calls = []
+    stub_live(monkeypatch, {"Anytime Fitness": A.SUBSCRIPTION}, calls)
+    entries = [(date(2026, 1, 5), 29.99), (date(2026, 2, 5), 29.99),
+               (date(2026, 3, 5), 29.99)]
+
+    found = only(find_recurring(rows("Anytime Fitness", entries, category="Health"),
+                                allow_network=True))
+
+    assert calls == [["Anytime Fitness"]]
+    assert found["nature"] == A.SUBSCRIPTION
+    subscriptions, _ = A.split_recurring([found])
+    assert len(subscriptions) == 1
+
+
+def test_find_recurring_is_offline_by_default():
+    entries = [(date(2026, 1, 5), 29.99), (date(2026, 2, 5), 29.99),
+               (date(2026, 3, 5), 29.99)]
+    found = only(find_recurring(rows("Anytime Fitness", entries, category="Health")))
+    assert found["nature"] == A.UNCLEAR
+
+
+def test_internal_category_field_is_not_leaked():
+    """_category is scaffolding for the batch pass; it must not reach the API."""
+    entries = [(date(2026, 1, 5), 10.0), (date(2026, 2, 5), 10.0),
+               (date(2026, 3, 5), 10.0)]
+    found = only(find_recurring(rows("Netflix", entries, category="Subscriptions")))
+    assert "_category" not in found
 
 
 def test_dashboard_response_still_validates_without_the_new_keys():
