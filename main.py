@@ -13,11 +13,12 @@ enumerated explicitly.
 import json
 import logging
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 import aggregate
 import db
+import query
 from adapter import normalize_account_type
 from models import DashboardResponse, HealthResponse
 
@@ -509,3 +510,35 @@ def reset() -> dict:
         raise HTTPException(status_code=500,
                             detail=f"Could not reset the database: {exc}") from exc
     return {"ok": True, "message": "Database reset."}
+
+
+@app.get("/api/ask/suggestions")
+def ask_suggestions() -> dict:
+    """The questions the demo clicks. Never typed live on stage."""
+    return {"questions": query.SUGGESTED_QUESTIONS}
+
+
+@app.post("/api/ask")
+def ask(payload: dict = Body(...)) -> dict:
+    """Answer a question about the stored transactions.
+
+    The model writes SQL; DuckDB computes. Guarded three ways -- sqlglot
+    parses and rejects anything that is not a single SELECT, the query is
+    wrapped in a LIMIT, and the connection is read-only.
+    """
+    question = (payload or {}).get("question", "")
+    if not isinstance(question, str) or not question.strip():
+        raise HTTPException(status_code=400, detail="Ask a question.")
+    if len(question) > 500:
+        raise HTTPException(status_code=400, detail="That question is too long.")
+
+    try:
+        db.init_db()
+        result = query.answer_question(question)
+    except Exception as exc:
+        logger.exception("Ask failed")
+        raise HTTPException(status_code=500, detail=f"Could not answer that: {exc}") from exc
+
+    result.setdefault("rows", [])
+    result.setdefault("sql", "")
+    return result
