@@ -636,3 +636,201 @@ def test_dashboard_response_still_validates_without_the_new_keys():
     response = DashboardResponse(**payload)
     assert response.repeated_spending == []
     assert response.repeated_spending_totals.count == 0
+
+
+# --- payoff amortization. Stage 8 -----------------------------------------
+
+import math  # noqa: E402
+
+from analyze import (  # noqa: E402
+    calculate_payoff,
+    minimum_payment,
+    payment_for_months,
+    payoff_scenarios,
+)
+
+DEMO_BALANCE, DEMO_APR = 3204.18, 24.99
+
+
+# CLAUDE.md's four required cases -------------------------------------------
+
+def test_the_spec_demo_case_cross_checked_against_the_closed_form():
+    """CLAUDE.md asks for this verified against an amortization calculator.
+
+    Done algebraically instead, which is a stronger check than trusting a
+    website: n = -log(1 - Br/P) / log(1+r) is derived independently of the
+    iterative loop, so agreement rules out a compounding-order bug.
+
+    NOTE: CLAUDE.md asserts 30-34 months and $1,200-$1,700 interest. Both are
+    wrong -- the answer is 29 months and $1,079.17, and the Stage 0 mock has
+    carried those figures since before this stage existed.
+    """
+    result = calculate_payoff(DEMO_BALANCE, DEMO_APR, 150.0)
+
+    rate = DEMO_APR / 100 / 12
+    closed_form = -math.log(1 - DEMO_BALANCE * rate / 150.0) / math.log(1 + rate)
+
+    assert result["months"] == math.ceil(closed_form) == 29
+    assert result["total_interest"] == pytest.approx(1079.17, abs=0.05)
+
+
+def test_a_payment_below_the_first_months_interest_never_pays_off():
+    interest = DEMO_BALANCE * DEMO_APR / 100 / 12
+    assert calculate_payoff(DEMO_BALANCE, DEMO_APR, interest - 0.01) is None
+    assert calculate_payoff(DEMO_BALANCE, DEMO_APR, interest) is None
+    assert calculate_payoff(DEMO_BALANCE, DEMO_APR, interest + 1) is not None
+
+
+@pytest.mark.parametrize("balance,payment", [
+    (3204.18, 150.0), (1000.0, 100.0), (99.99, 25.0), (500.0, 500.0),
+])
+def test_zero_apr_is_plain_division(balance, payment):
+    result = calculate_payoff(balance, 0.0, payment)
+    assert result["months"] == math.ceil(balance / payment)
+    assert result["total_interest"] == 0.0
+
+
+def test_zero_balance_is_zero_months():
+    result = calculate_payoff(0.0, DEMO_APR, 150.0)
+    assert result == {"months": 0, "total_interest": 0.0, "series": []}
+
+
+# the minimum payment ---------------------------------------------------------
+
+def test_minimum_payment_is_interest_plus_one_percent():
+    interest = DEMO_BALANCE * DEMO_APR / 100 / 12
+    assert minimum_payment(DEMO_BALANCE, DEMO_APR) == pytest.approx(
+        interest + 0.01 * DEMO_BALANCE, abs=0.01)
+
+
+@pytest.mark.parametrize("apr", [0, 5, 12, 18, 24, 24.99, 29.99, 36, 49.9, 79.9])
+def test_the_minimum_always_amortizes_at_any_apr(apr):
+    """The property the spec's max(25, 2%) lacks.
+
+    A flat percentage drops below one month's interest once APR exceeds 12x
+    that percentage -- 2% breaks above 24% APR, which is why the 24.99% demo
+    card returned None. Interest + 1% of principal is above interest by
+    construction, so there is no APR at which this fails.
+    """
+    payment = minimum_payment(DEMO_BALANCE, apr)
+    assert payment > DEMO_BALANCE * apr / 100 / 12
+    assert calculate_payoff(DEMO_BALANCE, apr, payment) is not None
+
+
+def test_the_spec_formula_would_have_failed_here():
+    """Pins the reason for the deviation so it cannot be quietly reverted."""
+    spec_payment = max(25, 0.02 * DEMO_BALANCE)
+    assert spec_payment == pytest.approx(64.08, abs=0.01)
+    assert calculate_payoff(DEMO_BALANCE, DEMO_APR, spec_payment) is None
+
+
+def test_small_balances_hit_the_twenty_five_dollar_floor():
+    assert minimum_payment(50.0, 24.99) == 25.0
+
+
+# payment_for_months ----------------------------------------------------------
+
+@pytest.mark.parametrize("months", [6, 12, 18, 24, 36, 48, 60])
+def test_payment_for_months_hits_its_target_exactly(months):
+    payment = payment_for_months(DEMO_BALANCE, DEMO_APR, months)
+    assert calculate_payoff(DEMO_BALANCE, DEMO_APR, payment)["months"] == months
+
+
+def test_payment_for_months_rounds_up_not_to_nearest():
+    """Rounding to nearest can land a fraction of a cent short, and the
+    amortization then bills an extra month: 304.5232 -> 304.52 pays off in 13
+    months, not 12."""
+    exact = DEMO_BALANCE * (DEMO_APR / 100 / 12) / (
+        1 - (1 + DEMO_APR / 100 / 12) ** -12)
+    payment = payment_for_months(DEMO_BALANCE, DEMO_APR, 12)
+
+    assert payment >= exact
+    assert payment == 304.53
+    assert round(exact, 2) == 304.52, "the naive rounding this guards against"
+    assert calculate_payoff(DEMO_BALANCE, DEMO_APR, 304.52)["months"] == 13
+
+
+def test_payment_for_months_at_zero_apr():
+    assert payment_for_months(1200.0, 0.0, 12) == 100.0
+
+
+# the scenario set ------------------------------------------------------------
+
+def test_four_scenarios_on_the_demo_card():
+    scenarios = payoff_scenarios(DEMO_BALANCE, DEMO_APR)
+
+    assert [s["label"] for s in scenarios] == [
+        "Minimum only", "Pay off in 3 years", "Minimum + $100", "Pay off in 1 year"]
+    assert [s["months"] for s in scenarios] == [55, 36, 20, 12]
+    assert scenarios[0]["monthly_payment"] == 98.77
+
+
+def test_scenarios_are_ordered_by_payment_and_save_more_as_they_rise():
+    scenarios = payoff_scenarios(DEMO_BALANCE, DEMO_APR)
+    payments = [s["monthly_payment"] for s in scenarios]
+    interest = [s["total_interest"] for s in scenarios]
+
+    assert payments == sorted(payments)
+    assert interest == sorted(interest, reverse=True), "paying more must cost less"
+
+
+def test_every_series_ends_at_zero_and_matches_its_month_count():
+    for s in payoff_scenarios(DEMO_BALANCE, DEMO_APR):
+        assert len(s["series"]) == s["months"]
+        assert s["series"][-1]["balance"] == 0
+        balances = [p["balance"] for p in s["series"]]
+        assert balances == sorted(balances, reverse=True), "balance must only fall"
+
+
+def test_near_identical_payments_do_not_produce_duplicate_lines():
+    """Two rules can land within a dollar of each other; one line, not two."""
+    for balance, apr in [(3204.18, 24.99), (800.0, 19.99), (12000.0, 14.5)]:
+        payments = [s["monthly_payment"] for s in payoff_scenarios(balance, apr)]
+        for a, b in zip(payments, payments[1:]):
+            assert b - a >= 1.0, f"{a} and {b} are the same line"
+
+
+def test_scenarios_validate_against_the_frozen_model():
+    from models import PayoffScenario
+
+    for s in payoff_scenarios(DEMO_BALANCE, DEMO_APR):
+        model = PayoffScenario(**s)
+        assert model.label
+        assert model.series[-1].balance == 0
+
+
+def test_payoff_scenario_still_validates_without_a_label():
+    """The freeze permits adding a field, not breaking one."""
+    from models import PayoffScenario
+
+    assert PayoffScenario(monthly_payment=150.0, months=1, total_interest=0.0,
+                          series=[{"month": 1, "balance": 0.0}]).label == ""
+
+
+# robustness -------------------------------------------------------------------
+
+@pytest.mark.parametrize("balance,apr", [
+    (0, 24.99), (-100, 24.99), (None, 24.99), (3204.18, None), ("junk", 24.99),
+])
+def test_scenarios_degrade_to_empty_rather_than_raising(balance, apr):
+    assert payoff_scenarios(balance, apr) == []
+
+
+@pytest.mark.parametrize("args", [
+    (None, 24.99, 150.0), (3204.18, None, 150.0), (3204.18, 24.99, None),
+    ("x", "y", "z"), (3204.18, 24.99, 0), (3204.18, 24.99, -50), (3204.18, -5, 150),
+])
+def test_calculate_payoff_returns_none_on_junk_rather_than_raising(args):
+    assert calculate_payoff(*args) is None
+
+
+def test_a_balance_that_never_clears_within_the_cap_returns_none():
+    """Fifty years of payments and still owing is 'never pays off'."""
+    interest = 500_000 * 0.2999 / 100 / 12
+    assert calculate_payoff(500_000, 29.99, interest + 0.02) is None
+
+
+def test_results_are_deterministic():
+    first = payoff_scenarios(DEMO_BALANCE, DEMO_APR)
+    for _ in range(5):
+        assert payoff_scenarios(DEMO_BALANCE, DEMO_APR) == first

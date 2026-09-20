@@ -44,6 +44,7 @@ WHAT IS EXCLUDED, AND WHY
 
 import csv
 import logging
+import math
 import os
 import re
 import statistics
@@ -483,6 +484,150 @@ def find_recurring(txns: list[dict], *, allow_network: bool | None = None) -> li
             ", ".join(sorted(r["merchant"] for r in results if r["nature"] == UNCLEAR)),
         )
     return results
+
+
+# --- payoff amortization. Stage 8 ------------------------------------------
+#
+# The minimum payment is interest + 1% of principal, not CLAUDE.md's
+# max(25, 2% of balance). The spec's formula does not amortize the demo card:
+#
+#     $3,204.18 at 24.99%  ->  2% is $64.08, one month's interest is $66.73
+#
+# and the payoff chart renders empty. It is not a rounding problem -- a flat
+# percentage falls below interest whenever APR exceeds 12x that percentage,
+# so 2% breaks above 24% APR and 3% breaks above 36%. The demo card sits just
+# past the first cliff. Interest + 1% of principal is above interest by
+# construction at any APR, and it is what card issuers actually use, so it
+# survives being asked where the number came from.
+MINIMUM_PAYMENT_FLOOR = 25.0
+MINIMUM_PRINCIPAL_FRACTION = 0.01
+MAX_PAYOFF_MONTHS = 600
+
+# Balances are carried to the cent, as a statement does. Without this a float
+# residue of ~1e-11 dollars survives the final payment and the loop bills an
+# extra month: a payment computed to clear in exactly 36 months reported 37.
+CENTS = 2
+
+
+def minimum_payment(balance: float, apr: float) -> float:
+    """One month's interest plus 1% of principal, floored at $25."""
+    balance = max(0.0, _num(balance) or 0.0)
+    apr = max(0.0, _num(apr) or 0.0)
+    interest = balance * (apr / 100 / 12)
+    return round(max(MINIMUM_PAYMENT_FLOOR, interest + MINIMUM_PRINCIPAL_FRACTION * balance), 2)
+
+
+def payment_for_months(balance: float, apr: float, months: int) -> float:
+    """The monthly payment that clears `balance` in exactly `months`.
+
+    The inverse of the amortization loop, in closed form:
+        P = B*r / (1 - (1+r)^-n)
+    At 0% APR this degenerates to B/n, which the formula cannot express
+    (division by zero), so that case is handled separately.
+
+    Rounded UP to the cent, never to nearest. A payment a fraction of a cent
+    short does not clear the balance and the amortization bills an extra
+    month: $304.5232 rounds to $304.52 and pays off in 13 months, not 12.
+    Rounding up is also what the question asks for -- the payment needed to
+    finish in n months cannot be less than the payment that finishes in n
+    months.
+    """
+    balance = max(0.0, _num(balance) or 0.0)
+    apr = max(0.0, _num(apr) or 0.0)
+    months = max(1, int(months))
+    if balance <= 0:
+        return 0.0
+    rate = apr / 100 / 12
+    exact = balance / months if rate == 0 else balance * rate / (1 - (1 + rate) ** -months)
+    return math.ceil(exact * 100) / 100
+
+
+def calculate_payoff(balance: float, apr: float, monthly_payment: float) -> dict | None:
+    """Amortize a balance. None when the payment never clears it.
+
+    Returns {"months", "total_interest", "series"}. `series` is the balance
+    remaining after each payment, so the last point is 0.
+    """
+    balance = _num(balance)
+    apr = _num(apr)
+    monthly_payment = _num(monthly_payment)
+    if balance is None or apr is None or monthly_payment is None:
+        return None
+    if balance <= 0:
+        return {"months": 0, "total_interest": 0.0, "series": []}
+    if monthly_payment <= 0 or apr < 0:
+        return None
+
+    rate = apr / 100 / 12
+    # A payment that does not cover the first month's interest never reduces
+    # the principal, so the balance grows forever.
+    if monthly_payment <= round(balance * rate, CENTS):
+        return None
+
+    remaining = balance
+    total_interest = 0.0
+    series: list[dict] = []
+
+    for month in range(1, MAX_PAYOFF_MONTHS + 1):
+        interest = round(remaining * rate, CENTS)
+        total_interest += interest
+        remaining = round(remaining + interest - monthly_payment, CENTS)
+        if remaining < 0:
+            remaining = 0.0
+        series.append({"month": month, "balance": remaining})
+        if remaining <= 0:
+            return {"months": month,
+                    "total_interest": round(total_interest, CENTS),
+                    "series": series}
+
+    # Still owing after 50 years. Treated the same as a payment below
+    # interest: it does not pay off, so there is nothing to chart.
+    logger.warning("Payoff exceeded %d months at %.2f/mo on %.2f at %.2f%%; "
+                   "reporting as never paid off",
+                   MAX_PAYOFF_MONTHS, monthly_payment, balance, apr)
+    return None
+
+
+def payoff_scenarios(balance: float, apr: float) -> list[dict]:
+    """Four scenarios, ordered from least to most aggressive.
+
+    The first two mirror the minimum-payment disclosure US card statements
+    have been required to print since the CARD Act: what the minimum costs,
+    and what clearing the balance in three years costs instead. The other two
+    are levers the user can actually pull.
+
+    Anything that does not amortize is dropped rather than returned as a null
+    row, so the chart never has to render an empty line.
+    """
+    balance = _num(balance)
+    apr = _num(apr)
+    if balance is None or apr is None or balance <= 0:
+        return []
+
+    minimum = minimum_payment(balance, apr)
+    candidates = [
+        ("Minimum only", minimum),
+        ("Pay off in 3 years", payment_for_months(balance, apr, 36)),
+        ("Minimum + $100", round(minimum + 100, 2)),
+        ("Pay off in 1 year", payment_for_months(balance, apr, 12)),
+    ]
+
+    scenarios = []
+    seen: set[float] = set()
+    for label, payment in candidates:
+        # Two rules can land on near-identical payments; a duplicate line on
+        # the chart is noise.
+        if payment <= 0 or any(abs(payment - p) < 1.0 for p in seen):
+            continue
+        result = calculate_payoff(balance, apr, payment)
+        if result is None:
+            logger.info("Scenario %r (%.2f/mo) never pays off; omitted", label, payment)
+            continue
+        seen.add(payment)
+        scenarios.append({"label": label, "monthly_payment": payment, **result})
+
+    scenarios.sort(key=lambda s: s["monthly_payment"])
+    return scenarios
 
 
 def split_recurring(results: list[dict]) -> tuple[list[dict], list[dict]]:

@@ -95,6 +95,11 @@ class PayoffScenario(BaseModel):
     months: int
     total_interest: float
     series: list[PayoffPoint]
+    # Added after Stage 0. Defaulted so payloads built against the original
+    # contract still validate; Stage 8 always sets it. Without a label the
+    # frontend has to infer which line is which from the payment amount,
+    # which breaks the moment the scenario set changes.
+    label: str = ""
 
 
 class Payoff(BaseModel):
