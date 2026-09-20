@@ -370,6 +370,12 @@ async def upload(
         raise HTTPException(status_code=400,
                             detail=f"That file is not valid JSON: {exc}") from exc
 
+    # Each upload replaces the dashboard rather than adding to it -- a fresh
+    # statement means a fresh picture. Uploading several accounts together
+    # (so transfer detection sees all of them) is what /api/upload-batch is
+    # for; this endpoint always starts from an empty database.
+    db.reset_db()
+
     try:
         result = aggregate.ingest(parser_json, apr=apr,
                                   account_nickname=account_nickname)
@@ -407,6 +413,10 @@ async def upload_batch(
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files were uploaded.")
+
+    # Same replace-not-accumulate rule as /api/upload, applied once for the
+    # whole batch: these files together are the complete new picture.
+    db.reset_db()
 
     ingested, failures = [], []
     for upload_file in files:
