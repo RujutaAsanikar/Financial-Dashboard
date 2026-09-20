@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CloudUpload, X, FileSpreadsheet, TriangleAlert, LoaderCircle, CreditCard } from 'lucide-react';
+import { CloudUpload, X, TriangleAlert, LoaderCircle, CreditCard, Plus } from 'lucide-react';
 import { uploadStatement, uploadStatements } from '../api';
 import { cn } from '../lib/utils';
 
@@ -40,19 +40,39 @@ export default function UploadZone({ open, onClose, onUploaded }) {
     onClose();
   };
 
+  // Additive on purpose: a native file-picker dialog can only multi-select
+  // within the single folder it's currently showing — navigating to a
+  // different folder drops any prior selection. So if checking.json and
+  // credit.json live in different folders, the only way to get both is two
+  // separate picks, each adding to what's already selected rather than
+  // replacing it. Same reasoning applies to drag-drop across two drags.
   const pickFiles = (fileList) => {
     const picked = Array.from(fileList || []);
     if (!picked.length) return;
     const bad = picked.find((f) => !/\.json$/i.test(f.name));
     if (bad) {
       setError(`${bad.name} isn't a .json file from the parser — every file in the batch must be.`);
-      setFiles([]);
       return;
     }
     setError(null);
-    setFiles(picked);
-    setCreditIndex(null);
-    setApr('');
+    setFiles((current) => {
+      const existingKeys = new Set(current.map((f) => `${f.name}:${f.size}`));
+      const additions = picked.filter((f) => !existingKeys.has(`${f.name}:${f.size}`));
+      return [...current, ...additions];
+    });
+    // Without this, picking the exact same filename again later (e.g. after
+    // removing it) wouldn't fire onChange at all — the input's own value
+    // never actually changed from the browser's point of view.
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const removeFile = (index) => {
+    setFiles((current) => current.filter((_, i) => i !== index));
+    setCreditIndex((current) => {
+      if (current === index) return null;
+      if (current !== null && current > index) return current - 1;
+      return current;
+    });
   };
 
   const handleDrop = (e) => {
@@ -128,11 +148,13 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           />
           {files.length ? (
             <>
-              <FileSpreadsheet className="size-5 text-primary" />
+              <Plus className="size-5 text-primary" />
               <span className="text-sm font-medium">
-                {files.length} file{files.length > 1 ? 's' : ''} selected
+                {files.length} file{files.length > 1 ? 's' : ''} selected — click or drop to add another
               </span>
-              <span className="text-xs text-muted-foreground">click to replace</span>
+              <span className="text-xs text-muted-foreground">
+                In a different folder? Add it separately — each pick adds to the list below.
+              </span>
             </>
           ) : (
             <>
@@ -149,26 +171,36 @@ export default function UploadZone({ open, onClose, onUploaded }) {
               const isCredit = creditIndex === i;
               return (
                 <div key={`${f.name}-${i}`} className="rounded-xl border border-border bg-background p-3">
-                  <label className="flex cursor-pointer items-start gap-2.5">
-                    <input
-                      type="checkbox"
-                      checked={isCredit}
-                      onChange={() => toggleCredit(i)}
-                      className="mt-0.5 size-4 shrink-0 accent-primary"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                        {f.name}
-                        <span className="shrink-0 text-xs font-normal text-muted-foreground">
-                          ({(f.size / 1024).toFixed(0)} KB)
+                  <div className="flex items-start gap-2.5">
+                    <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5">
+                      <input
+                        type="checkbox"
+                        checked={isCredit}
+                        onChange={() => toggleCredit(i)}
+                        className="mt-0.5 size-4 shrink-0 accent-primary"
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 truncate text-sm font-medium">
+                          {f.name}
+                          <span className="shrink-0 text-xs font-normal text-muted-foreground">
+                            ({(f.size / 1024).toFixed(0)} KB)
+                          </span>
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                          <CreditCard className="size-3" />
+                          This is a credit card
                         </span>
                       </span>
-                      <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <CreditCard className="size-3" />
-                        This is a credit card
-                      </span>
-                    </span>
-                  </label>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      aria-label={`Remove ${f.name}`}
+                      className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
 
                   {isCredit && (
                     <div className="mt-2.5 pl-[26px]">
