@@ -90,10 +90,7 @@ statement prints about itself:
 | `totals_vs_balance` | Do the statement's own printed totals agree? |
 | `running_balance` | Does each row's balance move by exactly that row's amount? |
 
-Any check whose inputs are missing is skipped, not faked. The dashboard shows
-**Books reconciled** only if every check that ran, passed. On a real scanned
-statement this has caught OCR misreads worth **$100.06** — and told us which
-rows to look at.
+
 
 ---
 
