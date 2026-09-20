@@ -104,6 +104,17 @@ def test_the_prompt_states_the_refusal_contract():
     assert "never approximate" in prompt.lower()
 
 
+def test_the_prompt_forbids_alias_shadowing_and_pins_ordering():
+    """Asked for the biggest expense, the model wrote ABS(amount) AS amount
+    then ORDER BY amount ASC -- the alias shadowed the column, so it returned
+    the SMALLEST expense and called it the biggest. A real number under a
+    false claim, which no amount of grounding in the rows can catch."""
+    prompt = query.build_sql_prompt("q", query.SCHEMA_DDL, query.CATEGORIES,
+                                    "2026-09-20")
+    assert "ABS(amount) AS amount` is forbidden" in prompt
+    assert "ORDER BY ABS(amount) DESC" in prompt
+
+
 def test_the_inventory_lists_real_column_values():
     """Asked to compare two banks, the model wrote IN ('Finance Bank', 'Wiki
     Bank') against stored 'FINANCE BANK' / 'FIRST BANK OF WIKI'. Equality is

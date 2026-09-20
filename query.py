@@ -166,6 +166,15 @@ Rules:
   user's own accounts, not spending.
 - Group merchants by the `merchant` column, never `description` -- the raw
   description contains store numbers and varies between visits.
+- NEVER alias an expression to the name of an existing column
+  (`ABS(amount) AS amount` is forbidden). The alias shadows the column, so a
+  later ORDER BY or WHERE silently means something different from what you
+  intended. Use a distinct name such as `spend` or `total`.
+- "Biggest"/"largest"/"most expensive" spending means the LARGEST absolute
+  amount: `ORDER BY ABS(amount) DESC`. Spending is negative, so ordering the
+  signed column ascending gives the biggest and descending gives the
+  smallest -- get this backwards and you return the right number under the
+  wrong claim.
 - Return ONE SELECT statement. No semicolon, no markdown fence, no commentary,
   no CTE chains that end in anything but a SELECT.
 - Never write INSERT, UPDATE, DELETE, DROP, CREATE, ALTER or ATTACH.
