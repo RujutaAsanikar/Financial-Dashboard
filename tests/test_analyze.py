@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from adapter import adapt
-from analyze import find_recurring, match_cadence
+from analyze import PAYMENTS_PER_YEAR, find_recurring, match_cadence
 from normalize import resolve
 from transfers import mark_transfers
 
@@ -210,9 +210,28 @@ def test_annual_cost_and_next_expected():
         (date(2026, 1, 15), 15.99), (date(2026, 2, 15), 15.99),
         (date(2026, 3, 15), 15.99)])))
     assert result["amount"] == 15.99
-    assert result["annual_cost"] == pytest.approx(15.99 * 365 / 30, abs=0.01)
+    # 12 payments/year for a monthly (30-day) cadence, not 365/30 (~12.17) --
+    # a real monthly bill is charged once a calendar month, not "every 30.0
+    # days". See PAYMENTS_PER_YEAR.
+    assert result["annual_cost"] == pytest.approx(15.99 * 12, abs=0.01)
     assert result["first_seen"] == "2026-01-15"
     assert result["next_expected"] == "2026-04-14"   # last date + cadence
+
+
+def test_annual_cost_uses_calendar_payments_per_year_for_every_cadence():
+    """All 5 canonical cadences, not just monthly -- weekly/biweekly/
+    quarterly were also slightly overstated by 365/cadence_days."""
+    cases = [
+        (7, 52), (14, 26), (30, 12), (90, 4), (365, 1),
+    ]
+    for cadence, payments_per_year in cases:
+        assert PAYMENTS_PER_YEAR[cadence] == payments_per_year
+
+
+def test_annual_cost_falls_back_safely_for_an_unmapped_cadence():
+    """cadence_days is always one of CADENCES today, but this must degrade
+    -- not KeyError and crash the upload -- if that ever stopped being true."""
+    assert PAYMENTS_PER_YEAR.get(21) is None  # confirms 21 really is unmapped
 
 
 def test_next_expected_uses_the_cadence_not_the_inflated_median_gap():
