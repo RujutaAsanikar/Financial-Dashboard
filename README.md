@@ -98,7 +98,7 @@ statement prints about itself:
 
 ### 1. Upload
 
-Drag in one or more files. Accepted: **`.pdf` `.png` `.jpg` `.jpeg` `.gif`
+Drag in one or two files. Accepted: **`.pdf` `.png` `.jpg` `.jpeg` `.gif`
 `.webp`** (read by Claude) or **`.json`** (already-parsed output).
 
 Tick **credit card** on a card statement and give its **APR** — that's the only
