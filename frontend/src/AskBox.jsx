@@ -10,7 +10,7 @@ const EXAMPLES = [
   'How much did I spend on food last month?',
   'What is my biggest recurring charge?',
   'How much do I spend on weekends?',
-  'Compare August to July spending.',
+  'Compare my spending week by week.',
 ];
 
 export default function AskBox() {
