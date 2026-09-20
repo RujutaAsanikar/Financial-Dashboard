@@ -13,8 +13,10 @@ pandas==3.0.6
 # SQL validation (Stage 10)
 sqlglot==30.18.0
 
-# Gemini (Stages 5 and 10)
-google-genai==2.24.0
+# Anthropic/Claude -- ask SQL generation (Stage 10), recurring-classification
+# fallback, and the data_extraction.py PDF/image extractor. Triqai (merchant
+# normalization/categorization fallback) is a plain HTTP call, no SDK needed.
+anthropic==1.7.0
 
 # Tests
 pytest==9.1.1
