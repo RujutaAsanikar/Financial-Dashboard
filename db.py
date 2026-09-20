@@ -15,6 +15,7 @@ import hashlib
 import logging
 import os
 from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
@@ -69,9 +70,27 @@ _SCHEMA = (
         category VARCHAR
     )
     """,
+    # Added in Stage 9. Reconciliation is a fact about ONE statement, checked
+    # against header totals that are deliberately never stored, so it cannot
+    # be recomputed later. Re-deriving it from the accounts table would also
+    # be wrong: upload August then September for one card and the account row
+    # holds September's opening/closing while transactions span both months,
+    # so sum(amounts) no longer equals closing - opening and a correct
+    # extraction reports as failed.
+    """
+    CREATE TABLE IF NOT EXISTS extractions (
+        id            VARCHAR PRIMARY KEY,
+        account_id    VARCHAR,
+        uploaded_at   TIMESTAMP,
+        reconciled    BOOLEAN,
+        delta         DOUBLE,
+        checks_run    INTEGER,
+        rows_flagged  INTEGER
+    )
+    """,
 )
 
-_TABLES = ("transactions", "accounts", "merchant_cache")
+_TABLES = ("transactions", "accounts", "merchant_cache", "extractions")
 
 
 def get_con(read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -217,3 +236,83 @@ def insert_transactions(txns: list[dict]) -> int:
     logger.info("Inserted %d new of %d submitted (%d already present)",
                 inserted, len(txns), len(txns) - inserted)
     return inserted
+
+
+def all_transactions() -> list[dict]:
+    """Every stored row, oldest first, as canonical dicts.
+
+    Transfers pair across accounts and across uploads, and recurring
+    detection needs a merchant's whole history, so both have to see
+    everything already stored -- not just the statement being uploaded.
+    """
+    with get_con(read_only=True) as con:
+        rows = con.execute(
+            f"SELECT {', '.join(TRANSACTION_COLUMNS)} FROM transactions "
+            "ORDER BY date, id"
+        ).fetchall()
+    return [dict(zip(TRANSACTION_COLUMNS, row)) for row in rows]
+
+
+def update_flags(txns: list[dict]) -> int:
+    """Write is_transfer / is_recurring back. Returns rows updated.
+
+    Only these two columns are touched. A blanket UPDATE would overwrite
+    category and merchant, which later stages may have enriched since the
+    row was inserted.
+    """
+    updates = [(bool(t.get("is_transfer")), bool(t.get("is_recurring")), t["id"])
+               for t in (txns or []) if isinstance(t, dict) and t.get("id")]
+    if not updates:
+        return 0
+    with duckdb.connect(str(DB_PATH)) as con:
+        con.executemany(
+            "UPDATE transactions SET is_transfer = ?, is_recurring = ? WHERE id = ?",
+            updates,
+        )
+    logger.info("Updated flags on %d row(s)", len(updates))
+    return len(updates)
+
+
+def record_extraction(account_id: str, result: dict) -> None:
+    """Store one statement's reconciliation verdict.
+
+    Keyed on (account, uploaded_at) rather than account alone: a second
+    statement for the same card is a separate extraction with its own
+    verdict, and overwriting would hide a failure behind a later success.
+    """
+    stamp = datetime.now(timezone.utc)
+    row_id = hashlib.sha256(
+        f"{account_id}|{stamp.isoformat()}".encode()).hexdigest()[:16]
+    flagged = result.get("rows_needing_review") or []
+    with duckdb.connect(str(DB_PATH)) as con:
+        con.execute(
+            "INSERT INTO extractions VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (id) DO NOTHING",
+            [row_id, account_id, stamp,
+             bool(result.get("reconciled")), float(result.get("delta") or 0.0),
+             int(result.get("checks_run") or 0), len(flagged)],
+        )
+
+
+def extraction_summary() -> dict:
+    """Every statement's verdict, collapsed for the dashboard badge.
+
+    reconciled is True only if every statement reconciled AND at least one
+    check actually ran. An upload with nothing checkable must not display a
+    green badge -- that is the same false-confidence rule validate.py
+    applies per statement, applied again across statements.
+    """
+    with get_con(read_only=True) as con:
+        row = con.execute(
+            "SELECT COUNT(*), COUNT(*) FILTER (WHERE reconciled), "
+            "       COALESCE(SUM(delta), 0), COALESCE(SUM(rows_flagged), 0), "
+            "       COALESCE(SUM(checks_run), 0) "
+            "FROM extractions"
+        ).fetchone()
+
+    total, passed, delta, flagged, checks = row
+    return {
+        "reconciled": bool(total) and passed == total and checks > 0,
+        "delta": round(float(delta), 2),
+        "rows_needing_review": int(flagged),
+    }

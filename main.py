@@ -1,14 +1,23 @@
 """FastAPI app and routes.
 
-Stage 0: health check plus a /api/dashboard endpoint backed by hardcoded
-mock data so the frontend can start against the frozen contract.
+/api/dashboard is backed by DuckDB as of Stage 9. The Stage 0 mock is kept
+and served from /api/mock-dashboard: the frontend was built against it, and
+deleting it would break their dev loop the moment the database is empty --
+which it is after every demo reset.
+
+Every endpoint returns a JSON error rather than a traceback. An upload is the
+one place a user can hand us arbitrary input, so its failure modes are
+enumerated explicitly.
 """
 
+import json
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+import aggregate
+import db
 from models import DashboardResponse, HealthResponse
 
 logging.basicConfig(level=logging.INFO)
@@ -314,6 +323,110 @@ def health() -> dict:
     return {"ok": True}
 
 
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
 @app.get("/api/dashboard", response_model=DashboardResponse)
-def dashboard() -> dict:
+def get_dashboard() -> dict:
+    """The whole dashboard, from the database."""
+    try:
+        return aggregate.build_dashboard()
+    except Exception as exc:
+        logger.exception("Dashboard build failed")
+        raise HTTPException(status_code=500,
+                            detail=f"Could not build the dashboard: {exc}") from exc
+
+
+@app.get("/api/mock-dashboard", response_model=DashboardResponse)
+def get_mock_dashboard() -> dict:
+    """The Stage 0 fixture, unchanged.
+
+    Kept so the frontend has something to render against an empty database.
+    """
     return MOCK_DASHBOARD
+
+
+@app.post("/api/upload", response_model=DashboardResponse)
+async def upload(
+    file: UploadFile = File(...),
+    apr: float | None = Form(default=None),
+    credit_limit: float | None = Form(default=None),
+    account_nickname: str | None = Form(default=None),
+) -> dict:
+    """Ingest one parser JSON file and return the updated dashboard."""
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is {len(raw) // 1024}KB; the limit is "
+                   f"{MAX_UPLOAD_BYTES // 1024 // 1024}MB.")
+
+    try:
+        parser_json = json.loads(raw)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400,
+                            detail=f"That file is not valid JSON: {exc}") from exc
+
+    try:
+        result = aggregate.ingest(parser_json, apr=apr, credit_limit=credit_limit,
+                                  account_nickname=account_nickname)
+    except ValueError as exc:
+        # adapt() raises this when the payload is not parser output at all.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Upload failed")
+        raise HTTPException(status_code=500,
+                            detail=f"Could not process that statement: {exc}") from exc
+
+    logger.info("Upload %s: %d new of %d rows", file.filename,
+                result["inserted"], result["submitted"])
+    return aggregate.build_dashboard()
+
+
+@app.get("/api/transactions")
+def get_transactions(
+    limit: int = Query(default=100, ge=1, le=1000),
+    category: str | None = None,
+    account_id: str | None = None,
+) -> dict:
+    """Recent transactions, newest first, with optional filters."""
+    clauses, params = [], []
+    if category:
+        clauses.append("category = ?")
+        params.append(category)
+    if account_id:
+        clauses.append("account_id = ?")
+        params.append(account_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    try:
+        db.init_db()
+        with db.get_con(read_only=True) as con:
+            total = con.execute(
+                f"SELECT COUNT(*) FROM transactions {where}", params).fetchone()[0]
+            rows = con.execute(
+                f"SELECT {', '.join(db.TRANSACTION_COLUMNS)} FROM transactions "
+                f"{where} ORDER BY date DESC, id LIMIT ?", [*params, limit]).fetchall()
+    except Exception as exc:
+        logger.exception("Transaction query failed")
+        raise HTTPException(status_code=500,
+                            detail=f"Could not read transactions: {exc}") from exc
+
+    transactions = [dict(zip(db.TRANSACTION_COLUMNS, row)) for row in rows]
+    for txn in transactions:
+        txn["date"] = txn["date"].isoformat() if txn["date"] else None
+    return {"transactions": transactions, "count": len(transactions), "total": total}
+
+
+@app.post("/api/reset")
+def reset() -> dict:
+    """Wipe every table. For demo resets."""
+    try:
+        db.reset_db()
+    except Exception as exc:
+        logger.exception("Reset failed")
+        raise HTTPException(status_code=500,
+                            detail=f"Could not reset the database: {exc}") from exc
+    return {"ok": True, "message": "Database reset."}
