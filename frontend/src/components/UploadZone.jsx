@@ -3,6 +3,15 @@ import { CloudUpload, X, TriangleAlert, LoaderCircle, CreditCard, Plus } from 'l
 import { uploadStatement, uploadStatements } from '../api';
 import { cn } from '../lib/utils';
 
+// The parser's .json output, or a raw statement file for the backend to read
+// itself (via Claude). Kept in sync with raw_extraction.SUPPORTED_RAW_TYPES
+// on the backend -- notably no .tif/.tiff/.bmp, which Claude's API doesn't
+// accept as image input.
+const ACCEPTED_EXT = ['.json', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+
+const hasAcceptedExt = (filename) =>
+  ACCEPTED_EXT.some((ext) => filename.toLowerCase().endsWith(ext));
+
 export default function UploadZone({ open, onClose, onUploaded }) {
   const [files, setFiles] = useState([]);
   // Which file (by index into `files`) is the credit card, if any — at most
@@ -49,9 +58,11 @@ export default function UploadZone({ open, onClose, onUploaded }) {
   const pickFiles = (fileList) => {
     const picked = Array.from(fileList || []);
     if (!picked.length) return;
-    const bad = picked.find((f) => !/\.json$/i.test(f.name));
+    const bad = picked.find((f) => !hasAcceptedExt(f.name));
     if (bad) {
-      setError(`${bad.name} isn't a .json file from the parser — every file in the batch must be.`);
+      setError(
+        `${bad.name} isn't a supported file — use a statement PDF/image (${ACCEPTED_EXT.filter((e) => e !== '.json').join(', ')}) or the parser's .json output.`
+      );
       return;
     }
     setError(null);
@@ -112,7 +123,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           <div>
             <h2 className="text-lg font-semibold">Upload statement</h2>
             <p className="text-xs text-muted-foreground">
-              The parser's JSON output for your statement(s). Select checking and credit together for
+              A statement PDF/image, or the parser's JSON output. Select checking and credit together for
               accurate transfer detection right away. We never send this anywhere but our own backend.
             </p>
           </div>
@@ -141,7 +152,7 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           <input
             ref={inputRef}
             type="file"
-            accept=".json"
+            accept={ACCEPTED_EXT.join(',')}
             multiple
             className="sr-only"
             onChange={(e) => pickFiles(e.target.files)}
@@ -159,8 +170,8 @@ export default function UploadZone({ open, onClose, onUploaded }) {
           ) : (
             <>
               <CloudUpload className="size-6 text-muted-foreground" />
-              <span className="text-sm font-medium">Drop one or more statement JSON files here or click to browse</span>
-              <span className="text-xs text-muted-foreground">.json only</span>
+              <span className="text-sm font-medium">Drop one or more statements here or click to browse</span>
+              <span className="text-xs text-muted-foreground">PDF, image, or the parser's .json</span>
             </>
           )}
         </label>

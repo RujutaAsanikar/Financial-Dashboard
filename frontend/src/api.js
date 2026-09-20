@@ -16,14 +16,15 @@ export async function getDashboard() {
   return res.json();
 }
 
-// The parser emits JSON, one file per statement, named *_normalized.json.
-const ACCEPTED = /\.json$/i;
+// A statement PDF/image the backend reads itself, or the parser's own JSON
+// output. Mirrors raw_extraction.SUPPORTED_RAW_TYPES on the backend.
+const ACCEPTED = /\.(json|pdf|png|jpe?g|gif|webp)$/i;
 
 export async function uploadStatement(file, meta = {}) {
   if (USE_MOCK) {
     await wait(900);
     if (!file || !ACCEPTED.test(file.name)) {
-      throw new Error('Please upload a .json file from the parser.');
+      throw new Error('Please upload a statement PDF/image, or a .json file from the parser.');
     }
     return mock;
   }
@@ -51,7 +52,7 @@ export async function uploadStatements(files, meta = {}) {
   if (USE_MOCK) {
     await wait(900);
     const bad = [...files].find((f) => !ACCEPTED.test(f.name));
-    if (bad) throw new Error(`${bad.name} is not a .json file from the parser.`);
+    if (bad) throw new Error(`${bad.name} is not a supported statement file.`);
     return mock;
   }
 

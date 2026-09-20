@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import aggregate
 import db
 import query
+import raw_extraction
 from adapter import normalize_account_type
 from models import DashboardResponse, HealthResponse
 
@@ -365,10 +366,17 @@ async def upload(
                    f"{MAX_UPLOAD_BYTES // 1024 // 1024}MB.")
 
     try:
-        parser_json = json.loads(raw)
+        if raw_extraction.is_raw_statement(file.filename):
+            # PDF/image: run the Anthropic extractor first so this lands in
+            # the exact same parser-JSON shape a pre-parsed upload would.
+            parser_json = raw_extraction.extract(file.filename, raw)
+        else:
+            parser_json = json.loads(raw)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400,
                             detail=f"That file is not valid JSON: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     # Each upload replaces the dashboard rather than adding to it -- a fresh
     # statement means a fresh picture. Uploading several accounts together
@@ -431,9 +439,15 @@ async def upload_batch(
             continue
 
         try:
-            parser_json = json.loads(raw)
+            if raw_extraction.is_raw_statement(name):
+                parser_json = raw_extraction.extract(name, raw)
+            else:
+                parser_json = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             failures.append({"file": name, "error": f"Not valid JSON: {exc}"})
+            continue
+        except ValueError as exc:
+            failures.append({"file": name, "error": str(exc)})
             continue
 
         # One form serves a mixed batch, so apr only reaches the statement it
