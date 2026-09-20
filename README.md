@@ -1,44 +1,144 @@
 # Financial-Dashboard
 
-Backend for the personal-finance dashboard. Ingests parsed bank-statement JSON
-and serves analytics to the React frontend.
+Upload your bank and credit-card statements. Get back a dashboard that tells you
+where the money actually went — what's quietly recurring, what got more
+expensive, how long the card will take to pay off — and lets you ask questions
+about it in plain English.
 
-**Frontend devs, start here:**
+**It is not an LLM wrapper.** A model reads the PDF and a model writes SQL. Every
+number in between is produced by deterministic Python you can read and test:
+reconciliation, transfer matching, recurring detection, amortization. The model
+never computes a figure.
 
 | Doc | For |
 |---|---|
-| This page | Getting the backend running |
-| **[FRONTEND.md](FRONTEND.md)** | **How to build the UI against Stage 0 — start here** |
+| This page | What it does, how to run it, how the pipeline works |
+| [FRONTEND.md](FRONTEND.md) | Building the UI |
 | [API.md](API.md) | Reference: every field, TypeScript types, conventions |
+| `CLAUDE.md` | The build spec — stage by stage |
 
 ---
 
-## Do you even need to run this?
+## What happens when you upload a statement
 
-Probably not yet. `mock_dashboard.json` in this repo is an exact capture of what
-`GET /api/dashboard` returns, so you can build the entire UI with no Python:
-
-```ts
-import mock from "../mock_dashboard.json";
-const data: DashboardResponse = mock;
+```
+  statement.pdf
+        │
+        ▼
+  ┌───────────────────┐
+  │ 1. EXTRACT        │  Claude reads the PDF/image → parser JSON
+  │    raw_extraction │  (skipped if you upload .json directly)
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 2. ADAPT          │  → one canonical row shape
+  │    adapter.py     │  signs amounts, truncates the account number to 4 digits
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 3. RECONCILE      │  Does the extraction agree with the statement's own maths?
+  │    validate.py    │  Three checks. This is the "we didn't hallucinate" badge.
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 4. NORMALIZE      │  "SQ *COFFEE TREE ROASTERS 04213 PITTSBURGH PA"
+  │    normalize.py   │   → "Coffee Tree Roasters"
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 5. CATEGORIZE     │  dictionary → cache → Triqai → Claude → "Other"
+  │    categorize.py  │  the model only ever sees the tail it can't resolve
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 6. STORE          │  DuckDB. Re-uploading the same statement is a no-op.
+  │    db.py          │
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 7. LINK & DETECT  │  transfers.py  pairs the card payment with the
+  │    transfers.py   │                chequing withdrawal, so it isn't
+  │    analyze.py     │                counted as both spending and income
+  │                   │  analyze.py    finds subscriptions, price rises, payoff
+  └───────────────────┘
+        │
+        ▼
+  ┌───────────────────┐
+  │ 8. SERVE          │  GET /api/dashboard — one request, whole payload
+  │    aggregate.py   │
+  └───────────────────┘
 ```
 
-Run the backend when you're ready to swap that for a real `fetch`.
+Steps 7 and 8 run over **everything in the database**, not just the file you
+uploaded. A card payment pairs with a withdrawal that may have arrived in a
+different upload, and a subscription's history spans statements.
+
+### Why reconciliation matters
+
+Before anything is stored, the extraction is checked against arithmetic the
+statement prints about itself:
+
+| Check | Asks |
+|---|---|
+| `sum_vs_balance` | Do the transactions add up to `closing − opening`? |
+| `totals_vs_balance` | Do the statement's own printed totals agree? |
+| `running_balance` | Does each row's balance move by exactly that row's amount? |
+
+Any check whose inputs are missing is skipped, not faked. The dashboard shows
+**Books reconciled** only if every check that ran, passed. On a real scanned
+statement this has caught OCR misreads worth **$100.06** — and told us which
+rows to look at.
 
 ---
 
-## Setup
+## Using it
 
-You need **Python 3.11 or newer** (tested on 3.11 and 3.13) and git. Check with:
+### 1. Upload
 
-```bash
-python3 --version
-```
+Drag in one or more files. Accepted: **`.pdf` `.png` `.jpg` `.jpeg` `.gif`
+`.webp`** (read by Claude) or **`.json`** (already-parsed output).
 
-If that prints 3.11+ you're set — use `python3` everywhere below. No Gemini API
-key is needed; the AI features aren't wired up yet.
+Tick **credit card** on a card statement and give its **APR** — that's the only
+thing the payoff projection can't learn from the file itself.
 
-### macOS / Linux
+> **Upload chequing and credit together, in one go.** Transfer detection pairs
+> across accounts, so sending them separately shows your card payments as
+> spending until the second file lands.
+
+Each upload **replaces** the dashboard rather than adding to it. Use
+`POST /api/reset` (or the reset button) to clear up front.
+
+### 2. Read the dashboard
+
+- **Books reconciled** badge, and how many rows need review
+- **Total spent / income / net** — transfers excluded from all three
+- **Subscriptions** — cadence, annual cost, and **price increases**
+- **Repeated spending** — regular but not a subscription (the weekly coffee)
+- **Payoff** — four scenarios, from minimum-only to a year
+
+### 3. Ask questions
+
+Plain English. A model turns the question into **one SQL SELECT**; DuckDB does
+the arithmetic; the answer is built only from the rows that came back, with the
+SQL shown so you can check the work.
+
+It refuses rather than guesses. Questions asking for advice, a forecast, or
+anything the schema doesn't hold come back as *"That isn't answerable from the
+statement data available."* Three guards sit on the generated SQL: sqlglot
+**parses** it and requires exactly one `SELECT`, it's wrapped in a `LIMIT`, and
+the connection is **read-only**.
+
+---
+
+## Running it
+
+You need **Python 3.11+** and **Node 18+**.
 
 ```bash
 git clone https://github.com/RujutaAsanikar/Financial-Dashboard.git
@@ -46,100 +146,135 @@ cd Financial-Dashboard
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-
-.venv/bin/uvicorn main:app --reload --port 8000
 ```
 
-### Windows (PowerShell)
+On Windows use `py -m venv .venv` and `.venv\Scripts\pip` — the `\Scripts\`
+vs `/bin/` swap is the usual tripwire.
 
-```powershell
-git clone https://github.com/RujutaAsanikar/Financial-Dashboard.git
-cd Financial-Dashboard
+### API key
 
-py -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
+Reading PDFs, the categorization fallback and the Q&A box all call Claude. Put
+the key in a `.env` file at the repo root:
 
-.venv\Scripts\uvicorn main:app --reload --port 8000
+```
+ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Note the `\Scripts\` vs `/bin/` difference — that's the usual Windows tripwire.
+`.env` is gitignored. Without a key the app still runs — upload `.json` instead
+of PDFs, unknown merchants land in "Other", and the Q&A box reports that it
+couldn't reach the model. Everything else is unaffected, because everything else
+is plain Python.
 
-You don't have to "activate" the venv. Calling `.venv/bin/<tool>` directly does
-the same thing with less ceremony. If you'd rather activate it
-(`source .venv/bin/activate`, or `.venv\Scripts\Activate.ps1`), then plain
-`uvicorn main:app --reload` works too.
-
-Leave that last command running — it holds the terminal. Open a second tab for
-anything else. `--reload` restarts the server when files change.
-
----
-
-## Check it worked
+### Start both halves
 
 ```bash
-curl localhost:8000/api/health
-# {"ok":true}
+# terminal 1 — backend
+.venv/bin/uvicorn main:app --reload --port 8000
 
-curl localhost:8000/api/dashboard
+# terminal 2 — frontend
+npm --prefix frontend install
+npm --prefix frontend run dev
 ```
 
-Or just open **http://localhost:8000/docs** in a browser — interactive API
-explorer, click any endpoint and hit "Try it out".
+Then open **http://localhost:5173**.
+
+> **The frontend defaults to mock data.** Without this it renders
+> `mock_dashboard.json` and the chat box answers from a canned script — it will
+> look like it works while ignoring everything you upload. Create
+> `frontend/.env.local`:
+>
+> ```
+> VITE_USE_MOCK=false
+> VITE_API_BASE=http://localhost:8000
+> ```
+
+Check the backend on its own with `curl localhost:8000/api/health` → `{"ok":true}`,
+or open **http://localhost:8000/docs** for a clickable API explorer.
+
+### Tests
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+Fully offline — no test reaches the network, and `tests/conftest.py` strips API
+keys for the run so a stray call fails loudly instead of spending money.
 
 ---
 
-## What's available
+## Endpoints
 
-| Method | Path | Returns |
+| Method | Path | Does |
 |---|---|---|
-| `GET` | `/api/health` | `{"ok": true}` |
-| `GET` | `/api/dashboard` | The whole dashboard payload |
+| `GET` | `/api/health` | liveness |
+| `GET` | `/api/dashboard` | the whole payload, one request |
+| `POST` | `/api/upload` | one statement (+ `apr`, `account_nickname`) |
+| `POST` | `/api/upload-batch` | several at once — **preferred** |
+| `GET` | `/api/transactions` | rows, filterable by `category` / `account_id` |
+| `POST` | `/api/ask` | `{"question": "..."}` → `{answer, sql, rows}` |
+| `GET` | `/api/ask/suggestions` | the demo questions |
+| `POST` | `/api/reset` | wipe the database |
+| `GET` | `/api/mock-dashboard` | the Stage 0 fixture, for frontend dev |
 
-One request gets you everything — no per-widget endpoints, no pagination.
-
-**The data is currently hardcoded mock data** in the final, frozen shape. Build
-against it; real data drops in later with no frontend change. More endpoints
-(`/api/upload`, `/api/transactions`, `/api/ask`) land in Stage 9 — see
-[API.md](API.md) §2, and don't build against those yet, their shapes aren't
-frozen.
-
-CORS allows **any** `localhost` / `127.0.0.1` port, so your dev server's port
-doesn't matter. Serving from a LAN IP or a tunnel instead? Ask and we'll
-whitelist that origin.
-
----
-
-## When it doesn't work
-
-**`python3: command not found`** — install Python 3.11+ from
-[python.org](https://python.org), or `brew install python@3.11` on macOS.
-
-**`python3 --version` says 3.10 or older** — you need 3.11+. Install a newer
-one, then use `python3.11 -m venv .venv` explicitly.
-
-**`ModuleNotFoundError: No module named 'fastapi'`** — you're running system
-Python instead of the venv. Use the full `.venv/bin/uvicorn` path, or activate
-the venv first.
-
-**`Address already in use`** — something's on port 8000. Use another:
-`.venv/bin/uvicorn main:app --reload --port 8001`. Update your frontend's base
-URL to match.
-
-**CORS error in the browser console** — you're not on a `localhost` origin.
-Send us the exact origin and we'll add it.
-
-**`no tests ran`** — expected. Tests arrive in Stage 1.
-
-**Blank page at `/docs`** — Swagger loads from a CDN, so it needs internet. The
-API itself works offline; `curl` still gets you real responses.
+CORS allows any `localhost` / `127.0.0.1` port.
 
 ---
 
 ## Repo layout
 
-Only `main.py` and `models.py` matter to the frontend. `models.py` is the frozen
-contract — the source of truth for every shape in [API.md](API.md).
+```
+main.py          FastAPI app and routes
+models.py        the frozen response contract
+data_extraction.py / raw_extraction.py   PDF & image → parser JSON
+adapter.py       parser JSON → canonical rows
+validate.py      reconciliation
+db.py            DuckDB schema, dedupe, persistence
+normalize.py     merchant string cleanup
+categorize.py    the categorization cascade
+transfers.py     cross-account pair matching
+analyze.py       recurring detection + payoff amortization
+aggregate.py     dashboard assembly
+query.py         text-to-SQL and the guards around it
+fixtures/demo/   3-month chequing + credit statements to try it with
+```
 
-The rest (`adapter.py`, `validate.py`, `normalize.py`, `analyze.py`, …) is the
-analysis pipeline, built stage by stage per `CLAUDE.md`. Most are still empty
-stubs.
+The database is a single file, `finance.duckdb`, gitignored. Delete it to start
+clean.
+
+---
+
+## Limitations
+
+- **Categorization** is dictionary-first with a model fallback. Merchants
+  outside the dictionary land in "Other" until it's rebuilt.
+- **Reconciliation flags, it does not correct.** A failing check tells you which
+  rows to look at; it never edits a figure.
+- **Transfer detection uses a 3-day window** and may miss delayed postings. A
+  transfer whose other side you never uploaded can't be paired at all.
+- **Payoff assumes a fixed payment and no new charges** — a projection, not a
+  prediction, and not financial advice.
+- **Recurring detection needs 3+ occurrences** at a recognised cadence
+  (weekly, biweekly, monthly, quarterly, annual). A single statement usually
+  isn't enough history; three months is.
+
+---
+
+## When it doesn't work
+
+**`ModuleNotFoundError: No module named 'fastapi'`** — you're on system Python.
+Use the full `.venv/bin/uvicorn` path.
+
+**`Address already in use`** — something's on 8000. Use `--port 8001` and set
+`VITE_API_BASE` to match.
+
+**Dashboard shows data I never uploaded** — you're in mock mode. See
+`frontend/.env.local` above.
+
+**Upload fails on a PDF** — no `ANTHROPIC_API_KEY`. Upload the parser's `.json`
+instead, or add the key.
+
+**Subscriptions panel is empty** — not enough history. Recurring detection needs
+3+ occurrences; try the 3-month statements in `fixtures/demo/`.
+
+**Blank page at `/docs`** — Swagger loads from a CDN and needs internet. The API
+itself works offline.
