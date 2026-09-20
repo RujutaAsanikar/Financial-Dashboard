@@ -1,496 +1,250 @@
-#!/usr/bin/env python3
+"""Raw statement descriptions -> stable merchant grouping keys. Stage 4.
+
+Stage 7 groups subscriptions by exact string equality on this field, so the
+only hard requirement is that the same input always produces the same output.
+Prettiness is secondary; stability is not negotiable.
+
+Two layers:
+
+    resolve()    cache lookup -> optional live Triqai call -> normalize()
+    normalize()  pure deterministic regex, no network, no state
+
+normalize() is the floor. It always returns something, it never touches the
+network, and it is what the tests exercise. resolve() is the enrichment layer
+on top, and every one of its failure modes falls back to normalize().
+
+WHY THERE IS NO POSITIONAL CITY RULE
+------------------------------------
+CLAUDE.md's rule 5 -- drop the last token if it is ALL CAPS, 4+ characters,
+and the string has 3+ tokens -- was measured against real data before being
+dropped. On the Canadian fixture it collapsed six distinct merchants into a
+single "Interac Purchase" bucket (12 of 30 rows), because in
+"Interac Purchase - BOOKSTORE" the merchant IS the last token. Stage 7 would
+then report a 12-occurrence monthly subscription that does not exist.
+
+It also contradicted CLAUDE.md's own required cases in both directions at
+once: too timid on "CHECKCARD 0313 TARGET 00012345 PITTSBURGH PA"
+(-> "Target Pittsburgh", rule never fires, only 2 tokens remain) and too eager
+on "INTEREST CHARGE ON PURCHASES" (-> "Interest Charge On", eats a real word).
+No threshold fixes both, because position cannot distinguish a city from a
+noun. Every rule here keys on evidence instead: a known processor prefix, a
+phone-number shape, a long digit run, a trailing two-letter state code.
+
+The cost is that a city can survive into the merchant name -- "Giant Eagle
+Pittsburgh" rather than "Giant Eagle". That is a false SPLIT, which CLAUDE.md
+explicitly prefers to a false merge, and it does not affect grouping: every
+occurrence at one store normalizes identically. The Triqai layer resolves
+most of these to the clean brand name anyway.
 """
-Normalize extracted bank statement data into a fixed schema.
 
-Reads transaction_data.json (from either data_extraction.py or
-local_extraction.py) and writes a file with exactly these keys, in this order,
-using null for anything the input did not provide:
-
-    bank_name, account_holder_name, account_number, account_type,
-    statement_period_start, statement_period_end, currency,
-    opening_balance, closing_balance,
-    transactions[{date, description, reference, withdrawal, deposit, balance}],
-    total_withdrawals, total_deposits
-
-Usage:
-    python normalize_statement.py
-    python normalize_statement.py transaction_data.json -o statement_clean.json
-    python normalize_statement.py --derive --currency CAD
-    python normalize_statement.py --upper-names
-
-Standard library only.
-"""
-
-from __future__ import annotations
-
-import argparse
-import json
+import csv
+import logging
+import os
 import re
-import sys
+import threading
 from pathlib import Path
 
-DEFAULT_INPUT = "transaction_data.json"
-DEFAULT_OUTPUT = "statement_normalized.json"
+import triq
 
-# Target schema. Order here is the order written to the output file.
-TOP_LEVEL_FIELDS = [
-    "bank_name",
-    "account_holder_name",
-    "account_number",
-    "account_type",
-    "statement_period_start",
-    "statement_period_end",
-    "currency",
-    "opening_balance",
-    "closing_balance",
-    "transactions",
-    "total_withdrawals",
-    "total_deposits",
-]
+logger = logging.getLogger(__name__)
 
-TRANSACTION_FIELDS = ["date", "description", "reference", "withdrawal", "deposit", "balance"]
+ALIAS_PATH = Path(__file__).resolve().parent / "data" / "merchant_aliases.csv"
+ALIAS_FIELDS = ("raw_description", "merchant", "category", "confidence", "source")
 
-# Alternative names the two extractors (and other tools) might use. The first
-# match wins, so canonical names are listed first.
-TOP_LEVEL_ALIASES = {
-    "bank_name": ["bank_name", "bank", "institution", "institution_name", "vendor_name"],
-    "account_holder_name": ["account_holder_name", "account_holder", "holder_name", "customer_name", "name"],
-    "account_number": ["account_number", "account_no", "account", "acct_number", "acct_no"],
-    "account_type": ["account_type", "type", "product", "product_type"],
-    "statement_period_start": [
-        "statement_period_start", "period_start", "start_date", "from_date",
-        "statement_start", "statement_start_date",
-    ],
-    "statement_period_end": [
-        "statement_period_end", "period_end", "end_date", "to_date",
-        "statement_end", "statement_end_date",
-    ],
-    "currency": ["currency", "currency_code", "iso_currency"],
-    "opening_balance": ["opening_balance", "previous_balance", "beginning_balance", "balance_forward", "start_balance"],
-    "closing_balance": ["closing_balance", "ending_balance", "new_balance", "final_balance", "end_balance"],
-    "total_withdrawals": ["total_withdrawals", "total_debits", "withdrawals_total", "total_paid_out", "total_withdrawal"],
-    "total_deposits": ["total_deposits", "total_credits", "deposits_total", "total_paid_in", "total_deposit"],
-}
+# Live lookups are opt-in. Tests never set this, so the suite is offline and
+# deterministic by construction rather than by discipline.
+LIVE_LOOKUP_ENV = "TRIQ_LIVE_LOOKUP"
 
-TRANSACTION_ALIASES = {
-    "date": ["date", "transaction_date", "posted_date", "post_date", "value_date", "effective_date"],
-    "description": ["description", "details", "particulars", "narrative", "memo", "merchant", "payee", "transaction"],
-    "reference": ["reference", "ref", "ref_no", "cheque_number", "check_number", "check_no", "confirmation"],
-    "withdrawal": ["withdrawal", "withdrawals", "debit", "debits", "paid_out", "money_out", "amount_debit"],
-    "deposit": ["deposit", "deposits", "credit", "credits", "paid_in", "money_in", "amount_credit"],
-    "balance": ["balance", "running_balance", "balance_after", "closing_balance"],
-}
+# Hard cap per process. A 200-row upload where every row misses the cache
+# would otherwise be 200 sequential HTTP calls on the request path -- the API
+# has no batch endpoint -- and would exhaust a 100-credit month in one go.
+MAX_LIVE_LOOKUPS = int(os.getenv("TRIQ_MAX_LIVE_LOOKUPS", "40"))
 
-# Nested containers some extractors use for the statement period.
-PERIOD_CONTAINERS = ["statement_period", "period", "statement_dates"]
-PERIOD_START_KEYS = ["start", "start_date", "from", "begin", "beginning"]
-PERIOD_END_KEYS = ["end", "end_date", "to", "finish", "ending"]
+_PROCESSOR_PREFIXES = (
+    "SQ *", "TST* ", "TST*", "PY *", "PAYPAL *", "SP *", "UBER *",
+    "POS DEBIT", "ACH DEBIT", "ACH CREDIT", "DEBIT CARD PURCHASE", "VISA DDA PUR",
+)
 
-# A single signed amount column, seen on credit card statements.
-SIGNED_AMOUNT_ALIASES = ["amount", "transaction_amount", "value", "net_amount"]
+_CHECKCARD = re.compile(r"^CHECKCARD\s+\d{4}\s*", re.I)
+_PHONE = re.compile(r"\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b")
+_HASH_NUMBER = re.compile(r"#\s*\d+")
+_LONG_DIGITS = re.compile(r"\b\d{3,}\b")
+# Uppercase-only, and anchored to the end. Case-insensitive here would strip
+# the "Pa" it produced on a previous pass and break idempotence.
+_TRAILING_STATE = re.compile(r"\s+[A-Z]{2}\s*$")
+# Order/auth codes: letters and digits mixed in one token. Amazon prints
+# "US*2K4LM8" and it changes every order, so without this every purchase
+# becomes its own merchant and Stage 7 can never see Amazon as recurring.
+# Requires 2+ digits and 5+ characters, which spares "7-Eleven" (one digit)
+# and short names like "A1".
+_ORDER_CODE = re.compile(r"\b(?=[A-Za-z0-9*]{5,}\b)(?=(?:[^\d\s]*\d){2})[A-Za-z0-9*]+\b")
+# Day-of-week suffixes: Lyft prints "RIDE THU", which splits every ride.
+_TRAILING_DAY = re.compile(r"\s+(MON|TUE|WED|THU|FRI|SAT|SUN)\s*$", re.I)
+_WHITESPACE = re.compile(r"\s+")
+_EDGE_PUNCTUATION = " -.,*/|:;#"
 
-TRANSACTION_LIST_KEYS = ["transactions", "transaction", "lines", "entries", "rows", "activity", "items"]
-
-MONTHS = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-    "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
-}
-
-CURRENCY_SYMBOLS = {"$": None, "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR"}
+_lock = threading.Lock()
+_aliases: dict[str, dict] | None = None
+_live_calls = 0
 
 
-# ============================================
-# VALUE COERCION
-# ============================================
+def _is_reference_token(token: str) -> bool:
+    """True for a token that is all punctuation/digits AND carries 3+ digits.
 
-def pick(source: dict, names: list[str]):
-    """Return the first present, non-empty value among these key names."""
-    if not isinstance(source, dict):
+    The digit threshold is what saves merchants named after numbers:
+    "24 HOUR FITNESS", "5 GUYS BURGERS", "99 RANCH MARKET" keep their number,
+    while "0313" and "00012345" are dropped as reference noise.
+    """
+    return not re.search(r"[A-Za-z]", token) and len(re.sub(r"\D", "", token)) >= 3
+
+
+def normalize(description: str) -> str:
+    """Deterministic cleanup. No network, no cache, no configuration.
+
+    Idempotent: normalize(normalize(x)) == normalize(x) for all x.
+    """
+    if not isinstance(description, str):
+        return ""
+
+    text = description.strip()
+
+    # 1. Payment-processor prefixes. These vary between occurrences of the
+    #    same merchant, so they are noise for grouping purposes.
+    text = _CHECKCARD.sub("", text)
+    for prefix in _PROCESSOR_PREFIXES:
+        if text.upper().startswith(prefix.upper()):
+            text = text[len(prefix):]
+            break
+
+    # 2. Phone numbers, before any digit-run rule -- otherwise the digit rule
+    #    shreds the phone number and leaves its separators behind.
+    text = _PHONE.sub(" ", text)
+
+    # 3. Store and reference numbers.
+    text = _HASH_NUMBER.sub(" ", text)
+    text = _LONG_DIGITS.sub(" ", text)
+
+    # 4. Trailing two-letter state code, then the per-transaction tokens that
+    #    would otherwise split one merchant across its own occurrences.
+    text = _TRAILING_STATE.sub(" ", text)
+    text = _ORDER_CODE.sub(" ", text)
+    text = _TRAILING_DAY.sub(" ", text)
+
+    # 5. Leading and trailing reference tokens. Edges only -- never interior,
+    #    and never a token that contains letters.
+    tokens = text.split()
+    while tokens and _is_reference_token(tokens[0]):
+        tokens.pop(0)
+    while tokens and _is_reference_token(tokens[-1]):
+        tokens.pop()
+
+    # 6. Tidy. Punctuation is stripped only at the ends, so "Netflix.Com" and
+    #    "Automatic Payment - Thank You" keep the punctuation inside them.
+    text = _WHITESPACE.sub(" ", " ".join(tokens)).strip()
+    return text.strip(_EDGE_PUNCTUATION).title()
+
+
+def load_aliases(force: bool = False) -> dict[str, dict]:
+    """Load the reviewed alias cache. Missing file is not an error."""
+    global _aliases
+    with _lock:
+        if _aliases is not None and not force:
+            return _aliases
+        aliases: dict[str, dict] = {}
+        if ALIAS_PATH.exists():
+            with ALIAS_PATH.open(newline="", encoding="utf-8") as handle:
+                for row in csv.DictReader(handle):
+                    raw = (row.get("raw_description") or "").strip()
+                    if raw:
+                        aliases[raw] = row
+        _aliases = aliases
+        logger.info("Loaded %d merchant aliases from %s", len(aliases), ALIAS_PATH.name)
+        return _aliases
+
+
+def _accept(row: dict | None) -> str | None:
+    """A cached row is usable only with a merchant name at or above the floor."""
+    if not row:
         return None
-
-    lowered = {str(k).strip().lower(): v for k, v in source.items()}
-    for name in names:
-        if name in lowered:
-            value = lowered[name]
-            if value is None:
-                continue
-            if isinstance(value, str) and not value.strip():
-                continue
-            return value
-    return None
-
-
-def to_number(value) -> float | None:
-    """'$1,515.63' -> 1515.63, '(62.47)' -> -62.47, 1.5 -> 1.5, '' -> None."""
-    if value is None or isinstance(value, bool):
+    merchant = (row.get("merchant") or "").strip()
+    if not merchant:
         return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if not isinstance(value, str):
+    try:
+        confidence = float(row.get("confidence") or 0)
+    except (TypeError, ValueError):
         return None
+    return merchant if confidence >= triq.CONFIDENCE_FLOOR else None
 
-    raw = value.strip()
-    if not raw or raw.lower() in ("null", "none", "n/a", "na", "-", "--"):
-        return None
 
-    negative = (raw.startswith("(") and raw.endswith(")")) or raw.startswith("-") or raw.endswith("-")
-    # Keep digits, dot and comma, then treat comma as a thousands separator
-    # unless it is clearly a decimal comma (e.g. European "1.234,56").
-    cleaned = re.sub(r"[^\d.,]", "", raw)
-    if not cleaned:
-        return None
+def _append_alias(raw: str, result: dict, source: str) -> None:
+    ALIAS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not ALIAS_PATH.exists()
+    with ALIAS_PATH.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=ALIAS_FIELDS)
+        if new_file:
+            writer.writeheader()
+        writer.writerow({
+            "raw_description": raw,
+            "merchant": result.get("merchant") or "",
+            "category": result.get("category") or "",
+            "confidence": result.get("confidence") if result.get("confidence") is not None else "",
+            "source": source,
+        })
 
-    if "," in cleaned and "." in cleaned:
-        if cleaned.rfind(",") > cleaned.rfind("."):
-            cleaned = cleaned.replace(".", "").replace(",", ".")
+
+def live_lookups_used() -> int:
+    return _live_calls
+
+
+def resolve(description: str, *, country: str = "US",
+            allow_network: bool | None = None) -> str:
+    """Best available merchant name for a description.
+
+    Order: reviewed cache -> live Triqai call (opt-in) -> normalize().
+
+    allow_network defaults to the TRIQ_LIVE_LOOKUP environment variable, so
+    tests and CI stay offline without having to remember to pass anything.
+    A live result is written back to the cache, which means the network is
+    consulted at most once per distinct description, ever -- after that the
+    answer is deterministic and free.
+
+    Any failure at all -- no key, timeout, edge block, rate limit, low
+    confidence, no merchant identified -- falls through to normalize().
+    """
+    global _live_calls
+
+    if not isinstance(description, str) or not description.strip():
+        return ""
+
+    raw = description.strip()
+    cached = load_aliases().get(raw)
+    if cached is not None:
+        return _accept(cached) or normalize(description)
+
+    if allow_network is None:
+        allow_network = os.getenv(LIVE_LOOKUP_ENV, "").lower() in ("1", "true", "yes")
+
+    if allow_network:
+        with _lock:
+            budget_left = _live_calls < MAX_LIVE_LOOKUPS
+            if budget_left:
+                _live_calls += 1
+        if not budget_left:
+            logger.warning("Live lookup budget of %d exhausted; using regex for %r",
+                           MAX_LIVE_LOOKUPS, raw[:40])
         else:
-            cleaned = cleaned.replace(",", "")
-    elif "," in cleaned:
-        parts = cleaned.split(",")
-        # "1234,56" is a decimal comma; "1,234" is a thousands separator.
-        cleaned = cleaned.replace(",", ".") if len(parts[-1]) == 2 and len(parts) == 2 else cleaned.replace(",", "")
-
-    try:
-        number = float(cleaned)
-    except ValueError:
-        return None
-    return -abs(number) if negative else number
-
-
-def to_iso_date(value) -> str | None:
-    """Normalize common date spellings to YYYY-MM-DD; None if unparseable."""
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return None
-
-    raw = str(value).strip()
-    if not raw or raw.lower() in ("null", "none", "n/a", "na"):
-        return None
-
-    # Already ISO
-    match = re.match(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})", raw)
-    if match:
-        return _iso(*(int(g) for g in match.groups()))
-
-    # 10/14/2024 or 14/10/24 -- month first, the common statement convention
-    match = re.match(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$", raw)
-    if match:
-        a, b, c = (int(g) for g in match.groups())
-        year = c if c > 99 else 2000 + c
-        if a > 12 >= b:  # unambiguously day-first
-            return _iso(year, b, a)
-        return _iso(year, a, b)
-
-    # 14 Oct 2003 / Oct 14, 2003 / October 14 2003
-    match = re.match(r"^(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{2,4})$", raw)
-    if match:
-        day, month_name, year = match.groups()
-        month = MONTHS.get(month_name.lower()[:4]) or MONTHS.get(month_name.lower()[:3])
-        if month:
-            year_int = int(year)
-            return _iso(year_int if year_int > 99 else 2000 + year_int, month, int(day))
-
-    match = re.match(r"^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{2,4})$", raw)
-    if match:
-        month_name, day, year = match.groups()
-        month = MONTHS.get(month_name.lower()[:4]) or MONTHS.get(month_name.lower()[:3])
-        if month:
-            year_int = int(year)
-            return _iso(year_int if year_int > 99 else 2000 + year_int, month, int(day))
-
-    return None
-
-
-def _iso(year: int, month: int, day: int) -> str | None:
-    if not (1 <= month <= 12 and 1 <= day <= 31):
-        return None
-    return f"{year:04d}-{month:02d}-{day:02d}"
-
-
-def to_text(value) -> str | None:
-    """Collapse whitespace; empty and placeholder strings become None."""
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, (list, tuple)):
-        joined = " ".join(str(v) for v in value if v is not None)
-        return to_text(joined)
-    if not isinstance(value, str):
-        return None
-
-    text = re.sub(r"\s+", " ", value).strip()
-    if not text or text.lower() in ("null", "none", "n/a", "na", "-", "--", "unknown"):
-        return None
-    return text
-
-
-def to_reference(value) -> str | None:
-    """References stay strings so leading zeros survive ('0064')."""
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return to_text(value)
-
-
-# ============================================
-# INPUT SHAPE HANDLING
-# ============================================
-
-def load_input(path: Path) -> dict:
-    """Read the file and reduce it to a single statement dict."""
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        raise SystemExit(f"Input file not found: {path}")
-    except json.JSONDecodeError as err:
-        raise SystemExit(f"{path.name} is not valid JSON: {err}")
-
-    # A per-page list (what data_extraction.py writes for multi-page input)
-    if isinstance(raw, list):
-        pages = [p for p in raw if isinstance(p, dict)]
-        if not pages:
-            raise SystemExit(f"{path.name} contains a list with no statement objects.")
-        return merge_pages(pages)
-
-    if not isinstance(raw, dict):
-        raise SystemExit(f"{path.name} must contain a JSON object or a list of objects.")
-
-    # Sometimes the statement is nested one level down.
-    for wrapper in ("statement", "data", "result", "extracted_data"):
-        inner = raw.get(wrapper)
-        if isinstance(inner, dict) and find_transaction_list(inner) is not None:
-            return inner
-
-    return raw
-
-
-def find_transaction_list(source: dict) -> list | None:
-    lowered = {str(k).strip().lower(): v for k, v in source.items()}
-    for key in TRANSACTION_LIST_KEYS:
-        value = lowered.get(key)
-        if isinstance(value, list):
-            return value
-    return None
-
-
-def merge_pages(pages: list[dict]) -> dict:
-    """Combine per-page objects: concatenate transactions, first-seen metadata."""
-    merged: dict = {}
-    transactions: list = []
-
-    for page in pages:
-        page_transactions = find_transaction_list(page) or []
-        transactions.extend(t for t in page_transactions if isinstance(t, dict))
-        for key, value in page.items():
-            if key in TRANSACTION_LIST_KEYS:
-                continue
-            if merged.get(key) in (None, "", []) and value not in (None, "", []):
-                merged[key] = value
-
-    merged["transactions"] = transactions
-    return merged
-
-
-# ============================================
-# NORMALIZATION
-# ============================================
-
-def normalize_transaction(source: dict) -> dict:
-    """Map one input row onto the six target transaction fields."""
-    row = {field: None for field in TRANSACTION_FIELDS}
-
-    row["date"] = to_iso_date(pick(source, TRANSACTION_ALIASES["date"]))
-    row["description"] = to_text(pick(source, TRANSACTION_ALIASES["description"]))
-    row["reference"] = to_reference(pick(source, TRANSACTION_ALIASES["reference"]))
-    row["balance"] = to_number(pick(source, TRANSACTION_ALIASES["balance"]))
-
-    withdrawal = to_number(pick(source, TRANSACTION_ALIASES["withdrawal"]))
-    deposit = to_number(pick(source, TRANSACTION_ALIASES["deposit"]))
-
-    # A single signed amount column splits into the two target columns.
-    if withdrawal is None and deposit is None:
-        signed = to_number(pick(source, SIGNED_AMOUNT_ALIASES))
-        if signed is not None:
-            if signed < 0:
-                withdrawal = abs(signed)
-            elif signed > 0:
-                deposit = signed
-
-    # Both columns are magnitudes in the target schema.
-    row["withdrawal"] = abs(withdrawal) if withdrawal is not None else None
-    row["deposit"] = abs(deposit) if deposit is not None else None
-
-    return row
-
-
-def infer_currency(source: dict) -> str | None:
-    """Read a currency code, or map a symbol found in the raw values."""
-    stated = to_text(pick(source, TOP_LEVEL_ALIASES["currency"]))
-    if stated:
-        match = re.search(r"\b([A-Z]{3})\b", stated.upper())
-        if match:
-            return match.group(1)
-        for symbol, code in CURRENCY_SYMBOLS.items():
-            if symbol in stated and code:
-                return code
-    return None
-
-
-def normalize(source: dict, derive: bool, currency_override: str | None, upper_names: bool) -> tuple[dict, list[str]]:
-    """Produce the target object plus a list of fields left null."""
-    result: dict = {}
-
-    result["bank_name"] = to_text(pick(source, TOP_LEVEL_ALIASES["bank_name"]))
-    result["account_holder_name"] = to_text(pick(source, TOP_LEVEL_ALIASES["account_holder_name"]))
-    result["account_number"] = to_text(pick(source, TOP_LEVEL_ALIASES["account_number"]))
-    result["account_type"] = to_text(pick(source, TOP_LEVEL_ALIASES["account_type"]))
-
-    if upper_names:
-        for field in ("bank_name", "account_holder_name"):
-            if result[field]:
-                result[field] = result[field].upper()
-
-    start = pick(source, TOP_LEVEL_ALIASES["statement_period_start"])
-    end = pick(source, TOP_LEVEL_ALIASES["statement_period_end"])
-
-    # Fall back to a nested period object or a "X to Y" string.
-    if start is None or end is None:
-        for container_key in PERIOD_CONTAINERS:
-            container = pick(source, [container_key])
-            if isinstance(container, dict):
-                start = start if start is not None else pick(container, PERIOD_START_KEYS)
-                end = end if end is not None else pick(container, PERIOD_END_KEYS)
-                break
-            if isinstance(container, str):
-                parts = re.split(r"\s+(?:to|through|-|–|—)\s+", container)
-                if len(parts) == 2:
-                    start = start if start is not None else parts[0]
-                    end = end if end is not None else parts[1]
-                break
-
-    result["statement_period_start"] = to_iso_date(start)
-    result["statement_period_end"] = to_iso_date(end)
-    result["currency"] = (currency_override or infer_currency(source) or None)
-
-    result["opening_balance"] = to_number(pick(source, TOP_LEVEL_ALIASES["opening_balance"]))
-    result["closing_balance"] = to_number(pick(source, TOP_LEVEL_ALIASES["closing_balance"]))
-
-    raw_transactions = find_transaction_list(source) or []
-    result["transactions"] = [
-        normalize_transaction(t) for t in raw_transactions if isinstance(t, dict)
-    ]
-
-    result["total_withdrawals"] = to_number(pick(source, TOP_LEVEL_ALIASES["total_withdrawals"]))
-    result["total_deposits"] = to_number(pick(source, TOP_LEVEL_ALIASES["total_deposits"]))
-
-    if derive:
-        fill_derivable(result)
-
-    # Fixed key order, nulls for anything still missing.
-    ordered = {field: result.get(field) for field in TOP_LEVEL_FIELDS}
-    missing = [
-        field for field in TOP_LEVEL_FIELDS
-        if field != "transactions" and ordered.get(field) is None
-    ]
-    return ordered, missing
-
-
-def fill_derivable(result: dict) -> None:
-    """Compute totals and closing balance from the rows, when absent."""
-    transactions = result.get("transactions") or []
-    if not transactions:
-        return
-
-    def column_sum(field: str) -> float:
-        return round(sum(t[field] for t in transactions if isinstance(t.get(field), (int, float))), 2)
-
-    if result.get("total_withdrawals") is None:
-        result["total_withdrawals"] = column_sum("withdrawal")
-    if result.get("total_deposits") is None:
-        result["total_deposits"] = column_sum("deposit")
-
-    if result.get("closing_balance") is None:
-        for transaction in reversed(transactions):
-            if isinstance(transaction.get("balance"), (int, float)):
-                result["closing_balance"] = transaction["balance"]
-                break
-
-    if result.get("opening_balance") is None:
-        first = transactions[0]
-        if isinstance(first.get("balance"), (int, float)):
-            change = (first.get("deposit") or 0) - (first.get("withdrawal") or 0)
-            result["opening_balance"] = round(first["balance"] - change, 2)
-
-    # Period dates from the transaction range.
-    dates = sorted(t["date"] for t in transactions if t.get("date"))
-    if dates:
-        if result.get("statement_period_start") is None:
-            result["statement_period_start"] = dates[0]
-        if result.get("statement_period_end") is None:
-            result["statement_period_end"] = dates[-1]
-
-
-# ============================================
-# MAIN
-# ============================================
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Normalize extracted statement JSON into the fixed target schema."
-    )
-    parser.add_argument("input", nargs="?", default=DEFAULT_INPUT,
-                        help=f"Input JSON (default: {DEFAULT_INPUT}).")
-    parser.add_argument("-o", "--out", default=DEFAULT_OUTPUT,
-                        help=f"Output JSON (default: {DEFAULT_OUTPUT}).")
-    parser.add_argument("--derive", action="store_true",
-                        help="Compute missing totals, balances and period dates from the rows "
-                             "instead of leaving them null.")
-    parser.add_argument("--currency", default=None,
-                        help="Set the currency code (it is rarely printed on statements).")
-    parser.add_argument("--upper-names", action="store_true",
-                        help="Uppercase bank_name and account_holder_name.")
-    parser.add_argument("--in-place", action="store_true",
-                        help="Overwrite the input file with the normalized output.")
-    args = parser.parse_args()
-
-    input_path = Path(args.input).expanduser()
-    if not input_path.is_absolute():
-        input_path = Path.cwd() / input_path
-
-    output_path = input_path if args.in_place else Path(args.out).expanduser()
-    if not output_path.is_absolute():
-        output_path = Path.cwd() / output_path
-
-    source = load_input(input_path)
-    normalized, missing = normalize(
-        source,
-        derive=args.derive,
-        currency_override=args.currency.upper() if args.currency else None,
-        upper_names=args.upper_names,
-    )
-
-    output_path.write_text(json.dumps(normalized, indent=2) + "\n", encoding="utf-8")
-
-    count = len(normalized["transactions"])
-    print(f"Read     {input_path.name}")
-    print(f"Wrote    {output_path} ({count} transaction{'s' if count != 1 else ''})")
-
-    # Report rows with gaps, so a null is a decision rather than a surprise.
-    incomplete = sum(
-        1 for t in normalized["transactions"]
-        if t["date"] is None or (t["withdrawal"] is None and t["deposit"] is None)
-    )
-    if incomplete:
-        print(f"Note     {incomplete} transaction(s) missing a date or an amount", file=sys.stderr)
-
-    if missing:
-        print(f"Null     {', '.join(missing)}", file=sys.stderr)
-    else:
-        print("Fields   all top-level fields populated")
-
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+            result = triq.lookup(raw, country=country)
+            if result.get("merchant"):
+                # Cached even when below the floor: it cost a credit, and a
+                # later review can raise or lower the floor without respending.
+                _append_alias(raw, result, source="live")
+                load_aliases(force=True)
+                accepted = _accept({**result, "confidence": result.get("confidence") or 0})
+                if accepted:
+                    return accepted
+            else:
+                # Record the miss so we never pay for this description again.
+                _append_alias(raw, result, source="live-nomerchant")
+                load_aliases(force=True)
+
+    return normalize(description)

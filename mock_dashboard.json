@@ -1,0 +1,824 @@
+{
+  "accounts": [
+    {
+      "id": "chase-4821",
+      "bank_name": "Chase",
+      "account_holder_name": "Jane Doe",
+      "account_last4": "4821",
+      "account_type": "credit",
+      "closing_balance": 3204.18,
+      "apr": 24.99,
+      "transaction_count": 87
+    },
+    {
+      "id": "pnc-1093",
+      "bank_name": "PNC",
+      "account_holder_name": "Jane Doe",
+      "account_last4": "1093",
+      "account_type": "checking",
+      "closing_balance": 5417.62,
+      "apr": null,
+      "transaction_count": 134
+    }
+  ],
+  "summary": {
+    "total_spent": 12847.33,
+    "total_income": 14202.5,
+    "net": 1355.17,
+    "transaction_count": 221,
+    "period_start": "2026-03-01",
+    "period_end": "2026-09-17"
+  },
+  "by_category": [
+    {
+      "category": "Housing",
+      "amount": 4200.0,
+      "count": 6
+    },
+    {
+      "category": "Groceries",
+      "amount": 2184.55,
+      "count": 41
+    },
+    {
+      "category": "Food & Drink",
+      "amount": 1893.22,
+      "count": 58
+    },
+    {
+      "category": "Subscriptions",
+      "amount": 1129.88,
+      "count": 33
+    },
+    {
+      "category": "Transportation",
+      "amount": 942.17,
+      "count": 24
+    },
+    {
+      "category": "Shopping",
+      "amount": 878.4,
+      "count": 17
+    },
+    {
+      "category": "Utilities",
+      "amount": 731.05,
+      "count": 12
+    },
+    {
+      "category": "Health",
+      "amount": 402.16,
+      "count": 7
+    },
+    {
+      "category": "Entertainment",
+      "amount": 289.5,
+      "count": 9
+    },
+    {
+      "category": "Travel",
+      "amount": 118.9,
+      "count": 2
+    },
+    {
+      "category": "Fees & Interest",
+      "amount": 77.5,
+      "count": 8
+    }
+  ],
+  "spending_over_time": [
+    {
+      "month": "2026-03",
+      "amount": 1982.44
+    },
+    {
+      "month": "2026-04",
+      "amount": 1755.2
+    },
+    {
+      "month": "2026-05",
+      "amount": 2034.87
+    },
+    {
+      "month": "2026-06",
+      "amount": 1891.33
+    },
+    {
+      "month": "2026-07",
+      "amount": 1702.65
+    },
+    {
+      "month": "2026-08",
+      "amount": 2218.49
+    },
+    {
+      "month": "2026-09",
+      "amount": 1262.35
+    }
+  ],
+  "subscriptions": [
+    {
+      "merchant": "Duquesne Light",
+      "amount": 96.4,
+      "cadence_days": 30,
+      "annual_cost": 1172.87,
+      "price_change_pct": null,
+      "first_seen": "2026-03-12",
+      "next_expected": "2026-10-12",
+      "account_id": "pnc-1093"
+    },
+    {
+      "merchant": "Verizon Wireless",
+      "amount": 85.0,
+      "cadence_days": 30,
+      "annual_cost": 1034.17,
+      "price_change_pct": null,
+      "first_seen": "2026-03-08",
+      "next_expected": "2026-10-08",
+      "account_id": "pnc-1093"
+    },
+    {
+      "merchant": "State Farm Insurance",
+      "amount": 142.5,
+      "cadence_days": 90,
+      "annual_cost": 577.92,
+      "price_change_pct": null,
+      "first_seen": "2026-03-20",
+      "next_expected": "2026-12-16",
+      "account_id": "pnc-1093"
+    },
+    {
+      "merchant": "Planet Fitness",
+      "amount": 24.99,
+      "cadence_days": 30,
+      "annual_cost": 304.05,
+      "price_change_pct": 8.7,
+      "first_seen": "2026-03-05",
+      "next_expected": "2026-10-05",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Adobe Creative Cloud",
+      "amount": 22.99,
+      "cadence_days": 30,
+      "annual_cost": 279.71,
+      "price_change_pct": 9.5,
+      "first_seen": "2026-03-18",
+      "next_expected": "2026-10-18",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Nytimes",
+      "amount": 4.25,
+      "cadence_days": 7,
+      "annual_cost": 221.61,
+      "price_change_pct": null,
+      "first_seen": "2026-03-02",
+      "next_expected": "2026-09-21",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Netflix.Com",
+      "amount": 17.99,
+      "cadence_days": 30,
+      "annual_cost": 218.88,
+      "price_change_pct": 12.5,
+      "first_seen": "2026-03-15",
+      "next_expected": "2026-10-15",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Spotifyusa",
+      "amount": 11.99,
+      "cadence_days": 30,
+      "annual_cost": 145.88,
+      "price_change_pct": null,
+      "first_seen": "2026-03-11",
+      "next_expected": "2026-10-11",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Amazon Prime",
+      "amount": 139.0,
+      "cadence_days": 365,
+      "annual_cost": 139.0,
+      "price_change_pct": null,
+      "first_seen": "2026-04-22",
+      "next_expected": "2027-04-22",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Peacock",
+      "amount": 7.99,
+      "cadence_days": 30,
+      "annual_cost": 97.21,
+      "price_change_pct": null,
+      "first_seen": "2026-03-24",
+      "next_expected": "2026-10-24",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Apple Icloud",
+      "amount": 2.99,
+      "cadence_days": 30,
+      "annual_cost": 36.38,
+      "price_change_pct": null,
+      "first_seen": "2026-03-09",
+      "next_expected": "2026-10-09",
+      "account_id": "chase-4821"
+    }
+  ],
+  "subscription_totals": {
+    "count": 11,
+    "annual_cost": 4227.68,
+    "price_increases": 3
+  },
+  "repeated_spending": [
+    {
+      "merchant": "Giant Eagle",
+      "amount": 86.4,
+      "cadence_days": 7,
+      "annual_cost": 4505.83,
+      "occurrences": 26,
+      "first_seen": "2026-03-07",
+      "last_seen": "2026-09-12",
+      "account_id": "pnc-5590"
+    },
+    {
+      "merchant": "Coffee Tree Roasters",
+      "amount": 5.25,
+      "cadence_days": 7,
+      "annual_cost": 273.75,
+      "occurrences": 27,
+      "first_seen": "2026-03-03",
+      "last_seen": "2026-09-15",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Shell",
+      "amount": 48.2,
+      "cadence_days": 14,
+      "annual_cost": 1256.79,
+      "occurrences": 13,
+      "first_seen": "2026-03-11",
+      "last_seen": "2026-09-09",
+      "account_id": "chase-4821"
+    },
+    {
+      "merchant": "Uber Eats",
+      "amount": 31.75,
+      "cadence_days": 14,
+      "annual_cost": 827.77,
+      "occurrences": 12,
+      "first_seen": "2026-03-18",
+      "last_seen": "2026-09-02",
+      "account_id": "chase-4821"
+    }
+  ],
+  "repeated_spending_totals": {
+    "count": 4,
+    "annual_cost": 6864.14
+  },
+  "payoff": [
+    {
+      "account_id": "chase-4821",
+      "balance": 3204.18,
+      "apr": 24.99,
+      "scenarios": [
+        {
+          "label": "Minimum only",
+          "monthly_payment": 98.77,
+          "months": 55,
+          "total_interest": 2190.54,
+          "series": [
+            {
+              "month": 1,
+              "balance": 3172.14
+            },
+            {
+              "month": 2,
+              "balance": 3139.43
+            },
+            {
+              "month": 3,
+              "balance": 3106.04
+            },
+            {
+              "month": 4,
+              "balance": 3071.95
+            },
+            {
+              "month": 5,
+              "balance": 3037.15
+            },
+            {
+              "month": 6,
+              "balance": 3001.63
+            },
+            {
+              "month": 7,
+              "balance": 2965.37
+            },
+            {
+              "month": 8,
+              "balance": 2928.35
+            },
+            {
+              "month": 9,
+              "balance": 2890.56
+            },
+            {
+              "month": 10,
+              "balance": 2851.99
+            },
+            {
+              "month": 11,
+              "balance": 2812.61
+            },
+            {
+              "month": 12,
+              "balance": 2772.41
+            },
+            {
+              "month": 13,
+              "balance": 2731.38
+            },
+            {
+              "month": 14,
+              "balance": 2689.49
+            },
+            {
+              "month": 15,
+              "balance": 2646.73
+            },
+            {
+              "month": 16,
+              "balance": 2603.08
+            },
+            {
+              "month": 17,
+              "balance": 2558.52
+            },
+            {
+              "month": 18,
+              "balance": 2513.03
+            },
+            {
+              "month": 19,
+              "balance": 2466.59
+            },
+            {
+              "month": 20,
+              "balance": 2419.19
+            },
+            {
+              "month": 21,
+              "balance": 2370.8
+            },
+            {
+              "month": 22,
+              "balance": 2321.4
+            },
+            {
+              "month": 23,
+              "balance": 2270.97
+            },
+            {
+              "month": 24,
+              "balance": 2219.49
+            },
+            {
+              "month": 25,
+              "balance": 2166.94
+            },
+            {
+              "month": 26,
+              "balance": 2113.3
+            },
+            {
+              "month": 27,
+              "balance": 2058.54
+            },
+            {
+              "month": 28,
+              "balance": 2002.64
+            },
+            {
+              "month": 29,
+              "balance": 1945.57
+            },
+            {
+              "month": 30,
+              "balance": 1887.32
+            },
+            {
+              "month": 31,
+              "balance": 1827.85
+            },
+            {
+              "month": 32,
+              "balance": 1767.14
+            },
+            {
+              "month": 33,
+              "balance": 1705.17
+            },
+            {
+              "month": 34,
+              "balance": 1641.91
+            },
+            {
+              "month": 35,
+              "balance": 1577.33
+            },
+            {
+              "month": 36,
+              "balance": 1511.41
+            },
+            {
+              "month": 37,
+              "balance": 1444.12
+            },
+            {
+              "month": 38,
+              "balance": 1375.42
+            },
+            {
+              "month": 39,
+              "balance": 1305.29
+            },
+            {
+              "month": 40,
+              "balance": 1233.7
+            },
+            {
+              "month": 41,
+              "balance": 1160.62
+            },
+            {
+              "month": 42,
+              "balance": 1086.02
+            },
+            {
+              "month": 43,
+              "balance": 1009.87
+            },
+            {
+              "month": 44,
+              "balance": 932.13
+            },
+            {
+              "month": 45,
+              "balance": 852.77
+            },
+            {
+              "month": 46,
+              "balance": 771.76
+            },
+            {
+              "month": 47,
+              "balance": 689.06
+            },
+            {
+              "month": 48,
+              "balance": 604.64
+            },
+            {
+              "month": 49,
+              "balance": 518.46
+            },
+            {
+              "month": 50,
+              "balance": 430.49
+            },
+            {
+              "month": 51,
+              "balance": 340.68
+            },
+            {
+              "month": 52,
+              "balance": 249.0
+            },
+            {
+              "month": 53,
+              "balance": 155.42
+            },
+            {
+              "month": 54,
+              "balance": 59.89
+            },
+            {
+              "month": 55,
+              "balance": 0.0
+            }
+          ]
+        },
+        {
+          "label": "Pay off in 3 years",
+          "monthly_payment": 127.39,
+          "months": 36,
+          "total_interest": 1381.34,
+          "series": [
+            {
+              "month": 1,
+              "balance": 3143.52
+            },
+            {
+              "month": 2,
+              "balance": 3081.59
+            },
+            {
+              "month": 3,
+              "balance": 3018.37
+            },
+            {
+              "month": 4,
+              "balance": 2953.84
+            },
+            {
+              "month": 5,
+              "balance": 2887.96
+            },
+            {
+              "month": 6,
+              "balance": 2820.71
+            },
+            {
+              "month": 7,
+              "balance": 2752.06
+            },
+            {
+              "month": 8,
+              "balance": 2681.98
+            },
+            {
+              "month": 9,
+              "balance": 2610.44
+            },
+            {
+              "month": 10,
+              "balance": 2537.41
+            },
+            {
+              "month": 11,
+              "balance": 2462.86
+            },
+            {
+              "month": 12,
+              "balance": 2386.76
+            },
+            {
+              "month": 13,
+              "balance": 2309.07
+            },
+            {
+              "month": 14,
+              "balance": 2229.77
+            },
+            {
+              "month": 15,
+              "balance": 2148.81
+            },
+            {
+              "month": 16,
+              "balance": 2066.17
+            },
+            {
+              "month": 17,
+              "balance": 1981.81
+            },
+            {
+              "month": 18,
+              "balance": 1895.69
+            },
+            {
+              "month": 19,
+              "balance": 1807.78
+            },
+            {
+              "month": 20,
+              "balance": 1718.04
+            },
+            {
+              "month": 21,
+              "balance": 1626.43
+            },
+            {
+              "month": 22,
+              "balance": 1532.91
+            },
+            {
+              "month": 23,
+              "balance": 1437.44
+            },
+            {
+              "month": 24,
+              "balance": 1339.98
+            },
+            {
+              "month": 25,
+              "balance": 1240.5
+            },
+            {
+              "month": 26,
+              "balance": 1138.94
+            },
+            {
+              "month": 27,
+              "balance": 1035.27
+            },
+            {
+              "month": 28,
+              "balance": 929.44
+            },
+            {
+              "month": 29,
+              "balance": 821.41
+            },
+            {
+              "month": 30,
+              "balance": 711.13
+            },
+            {
+              "month": 31,
+              "balance": 598.55
+            },
+            {
+              "month": 32,
+              "balance": 483.62
+            },
+            {
+              "month": 33,
+              "balance": 366.3
+            },
+            {
+              "month": 34,
+              "balance": 246.54
+            },
+            {
+              "month": 35,
+              "balance": 124.28
+            },
+            {
+              "month": 36,
+              "balance": 0.0
+            }
+          ]
+        },
+        {
+          "label": "Minimum + $100",
+          "monthly_payment": 198.77,
+          "months": 20,
+          "total_interest": 740.6,
+          "series": [
+            {
+              "month": 1,
+              "balance": 3072.14
+            },
+            {
+              "month": 2,
+              "balance": 2937.35
+            },
+            {
+              "month": 3,
+              "balance": 2799.75
+            },
+            {
+              "month": 4,
+              "balance": 2659.28
+            },
+            {
+              "month": 5,
+              "balance": 2515.89
+            },
+            {
+              "month": 6,
+              "balance": 2369.51
+            },
+            {
+              "month": 7,
+              "balance": 2220.09
+            },
+            {
+              "month": 8,
+              "balance": 2067.55
+            },
+            {
+              "month": 9,
+              "balance": 1911.84
+            },
+            {
+              "month": 10,
+              "balance": 1752.88
+            },
+            {
+              "month": 11,
+              "balance": 1590.61
+            },
+            {
+              "month": 12,
+              "balance": 1424.96
+            },
+            {
+              "month": 13,
+              "balance": 1255.86
+            },
+            {
+              "month": 14,
+              "balance": 1083.24
+            },
+            {
+              "month": 15,
+              "balance": 907.03
+            },
+            {
+              "month": 16,
+              "balance": 727.15
+            },
+            {
+              "month": 17,
+              "balance": 543.52
+            },
+            {
+              "month": 18,
+              "balance": 356.07
+            },
+            {
+              "month": 19,
+              "balance": 164.72
+            },
+            {
+              "month": 20,
+              "balance": 0.0
+            }
+          ]
+        },
+        {
+          "label": "Pay off in 1 year",
+          "monthly_payment": 304.53,
+          "months": 12,
+          "total_interest": 450.09,
+          "series": [
+            {
+              "month": 1,
+              "balance": 2966.38
+            },
+            {
+              "month": 2,
+              "balance": 2723.62
+            },
+            {
+              "month": 3,
+              "balance": 2475.81
+            },
+            {
+              "month": 4,
+              "balance": 2222.84
+            },
+            {
+              "month": 5,
+              "balance": 1964.6
+            },
+            {
+              "month": 6,
+              "balance": 1700.98
+            },
+            {
+              "month": 7,
+              "balance": 1431.87
+            },
+            {
+              "month": 8,
+              "balance": 1157.16
+            },
+            {
+              "month": 9,
+              "balance": 876.73
+            },
+            {
+              "month": 10,
+              "balance": 590.46
+            },
+            {
+              "month": 11,
+              "balance": 298.23
+            },
+            {
+              "month": 12,
+              "balance": 0.0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "transfers_excluded": {
+    "count": 4,
+    "total": 1850.0
+  },
+  "extraction": {
+    "reconciled": true,
+    "delta": 0.0,
+    "rows_needing_review": 0
+  }
+}

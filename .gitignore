@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+finance.duckdb
+.pytest_cache/
+.env
+triqai_probe_results.json

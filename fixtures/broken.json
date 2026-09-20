@@ -1,0 +1,9 @@
+{
+  "bank_name": "Nowhere Bank",
+  "account_number": "****-1234",
+  "account_type": "Checking",
+  "statement_period_start": "2026-08-01",
+  "statement_period_end": "2026-08-31",
+  "opening_balance": 100.0,
+  "closing_balance": 50.0
+}

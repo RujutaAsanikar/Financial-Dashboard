@@ -1,0 +1,256 @@
+{
+  "bank_name": "Keystone Savings Bank",
+  "bank_address": "419 Liberty Ave, Pittsburgh PA 15222",
+  "account_holder_name": "Jane Doe",
+  "account_number": "00012-345-678-9",
+  "account_type": "Chequing",
+  "statement_period_start": "2026-08-01",
+  "statement_period_end": "2026-08-31",
+  "currency": "USD",
+  "opening_balance": 2450.0,
+  "closing_balance": 2759.86,
+  "total_withdrawals": 3494.18,
+  "total_deposits": 3804.04,
+  "transactions": [
+    {
+      "date": "2026-08-01",
+      "description": "Payroll Deposit - EMPLOYER",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 1842.55,
+      "balance": 4292.55
+    },
+    {
+      "date": "2026-08-02",
+      "description": "Pre-Auth. Payment - MORTGAGE",
+      "reference": null,
+      "withdrawal": 1210.0,
+      "deposit": null,
+      "balance": 3082.55
+    },
+    {
+      "date": "2026-08-03",
+      "description": "Interac Purchase - SUPERMARKET",
+      "reference": "1559",
+      "withdrawal": 87.43,
+      "deposit": null,
+      "balance": 2995.12
+    },
+    {
+      "date": "2026-08-04",
+      "description": "Fees - Monthly",
+      "reference": null,
+      "withdrawal": 4.95,
+      "deposit": null,
+      "balance": 2990.17
+    },
+    {
+      "date": "2026-08-05",
+      "description": "Web Bill Payment - HYDRO",
+      "reference": "9685",
+      "withdrawal": 96.4,
+      "deposit": null,
+      "balance": 2893.77
+    },
+    {
+      "date": "2026-08-06",
+      "description": "Interac Purchase - PHARMACY",
+      "reference": "2041",
+      "withdrawal": 32.18,
+      "deposit": null,
+      "balance": 2861.59
+    },
+    {
+      "date": "2026-08-07",
+      "description": "ATM Withdrawal - INTERAC",
+      "reference": "3990",
+      "withdrawal": 60.0,
+      "deposit": null,
+      "balance": 2801.59
+    },
+    {
+      "date": "2026-08-08",
+      "description": "Interac Purchase - COFFEE",
+      "reference": "1122",
+      "withdrawal": 5.75,
+      "deposit": null,
+      "balance": 2795.84
+    },
+    {
+      "date": "2026-08-10",
+      "description": "Pre-Auth. Payment - INSURANCE",
+      "reference": null,
+      "withdrawal": 142.5,
+      "deposit": null,
+      "balance": 2653.34
+    },
+    {
+      "date": "2026-08-11",
+      "description": "Interac Purchase - SUPERMARKET",
+      "reference": "1559",
+      "withdrawal": 64.22,
+      "deposit": null,
+      "balance": 2589.12
+    },
+    {
+      "date": "2026-08-12",
+      "description": "Web Bill Payment - MOBILE",
+      "reference": "4417",
+      "withdrawal": 85.0,
+      "deposit": null,
+      "balance": 2504.12
+    },
+    {
+      "date": "2026-08-13",
+      "description": "Interac Purchase - HARDWARE",
+      "reference": "1975",
+      "withdrawal": 118.94,
+      "deposit": null,
+      "balance": 2385.18
+    },
+    {
+      "date": "2026-08-14",
+      "description": "Cheque No. - 412",
+      "reference": null,
+      "withdrawal": 250.0,
+      "deposit": null,
+      "balance": 2135.18
+    },
+    {
+      "date": "2026-08-15",
+      "description": "Payroll Deposit - EMPLOYER",
+      "reference": null,
+      "withdrawal": null,
+      "deposit": 1842.55,
+      "balance": 3977.73
+    },
+    {
+      "date": "2026-08-17",
+      "description": "Interac Purchase - RESTAURANT",
+      "reference": "2288",
+      "withdrawal": 48.6,
+      "deposit": null,
+      "balance": 3929.13
+    },
+    {
+      "date": "2026-08-18",
+      "description": "Web Funds Transfer - To SAVINGS",
+      "reference": "2620",
+      "withdrawal": 300.0,
+      "deposit": null,
+      "balance": 3629.13
+    },
+    {
+      "date": "2026-08-19",
+      "description": "Interac Purchase - GAS BAR",
+      "reference": "3301",
+      "withdrawal": 52.31,
+      "deposit": null,
+      "balance": 3576.82
+    },
+    {
+      "date": "2026-08-20",
+      "description": "Web Bill Payment - VISA",
+      "reference": "7788",
+      "withdrawal": 450.0,
+      "deposit": null,
+      "balance": 3126.82
+    },
+    {
+      "date": "2026-08-21",
+      "description": "Interac Purchase - SUPERMARKET",
+      "reference": "1559",
+      "withdrawal": 71.05,
+      "deposit": null,
+      "balance": 3055.77
+    },
+    {
+      "date": "2026-08-22",
+      "description": "Fees - Interac",
+      "reference": null,
+      "withdrawal": 1.5,
+      "deposit": null,
+      "balance": 3054.27
+    },
+    {
+      "date": "2026-08-23",
+      "description": "Interac Refund - HARDWARE",
+      "reference": "1975",
+      "withdrawal": null,
+      "deposit": 118.94,
+      "balance": 3173.21
+    },
+    {
+      "date": "2026-08-24",
+      "description": "Interac Purchase - BOOKSTORE",
+      "reference": "5512",
+      "withdrawal": 27.4,
+      "deposit": null,
+      "balance": 3145.81
+    },
+    {
+      "date": "2026-08-25",
+      "description": "Pre-Auth. Payment - GYM",
+      "reference": null,
+      "withdrawal": 24.99,
+      "deposit": null,
+      "balance": 3120.82
+    },
+    {
+      "date": "2026-08-26",
+      "description": "Interac Purchase - COFFEE",
+      "reference": "1122",
+      "withdrawal": 6.25,
+      "deposit": null,
+      "balance": 3114.57
+    },
+    {
+      "date": "2026-08-27",
+      "description": "ATM Withdrawal - FIRST BANK",
+      "reference": "0064",
+      "withdrawal": 100.0,
+      "deposit": null,
+      "balance": 3014.57
+    },
+    {
+      "date": "2026-08-28",
+      "description": "Interac Purchase - SUPERMARKET",
+      "reference": "1559",
+      "withdrawal": 92.17,
+      "deposit": null,
+      "balance": 2922.4
+    },
+    {
+      "date": "2026-08-29",
+      "description": "Web Bill Payment - INTERNET",
+      "reference": "6610",
+      "withdrawal": 74.99,
+      "deposit": null,
+      "balance": 2847.41
+    },
+    {
+      "date": "2026-08-30",
+      "description": "Interac Purchase - RESTAURANT",
+      "reference": "2288",
+      "withdrawal": 63.8,
+      "deposit": null,
+      "balance": 2783.61
+    },
+    {
+      "date": "2026-08-31",
+      "description": "Fees - Overdraft",
+      "reference": null,
+      "withdrawal": 5.0,
+      "deposit": null,
+      "balance": 2778.61
+    },
+    {
+      "date": "2026-08-31",
+      "description": "Interac Purchase - PHARMACY",
+      "reference": "2041",
+      "withdrawal": 18.75,
+      "deposit": null,
+      "balance": 2759.86
+    }
+  ]
+}
